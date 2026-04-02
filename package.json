@@ -1,0 +1,57 @@
+{
+  "name": "@captureze/mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for the Captureze screenshot API",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "captureze-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev:server": "tsx src/index.ts",
+    "dev:cli": "tsx src/cli/index.ts",
+    "start:server": "node dist/index.js",
+    "start:cli": "node dist/cli/index.js",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Captureze/mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "captureze",
+    "screenshot",
+    "ai"
+  ],
+  "author": "Captureze",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Captureze/mcp/issues"
+  },
+  "homepage": "https://github.com/Captureze/mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "axios": "^1.14.0",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "eslint": "^9.24.0",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^4.1.2"
+  }
+}
