@@ -57,7 +57,12 @@ function fakeApi({ sites = [], captureStatus = 200, captureBody = CAPTURE }: Rou
 }
 
 async function connect(fetchImpl: FetchLike, includeChatGptTools = true) {
-  const server = createCapturezeServer({ config: CONFIG, apiKey: 'cap_test', fetchImpl, includeChatGptTools });
+  const server = createCapturezeServer({
+    config: CONFIG,
+    apiKey: 'cap_test',
+    fetchImpl,
+    includeChatGptTools,
+  });
   const client = new Client({ name: 'test', version: '0.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -175,7 +180,9 @@ describe('captureze MCP server', () => {
   it('exposes the account sites as a resource', async () => {
     const { client } = await connect(fakeApi({ sites: [SITE] }).fetchImpl);
     const { contents } = await client.readResource({ uri: 'captureze://sites' });
-    assert.equal(contents[0]!.mimeType, 'application/json');
-    assert.match(String(contents[0]!.text), /example\.com/);
+    const [entry] = contents;
+    assert.ok(entry && 'text' in entry);
+    assert.equal(entry.mimeType, 'application/json');
+    assert.match(entry.text, /example\.com/);
   });
 });

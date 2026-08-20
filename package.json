@@ -1,7 +1,7 @@
 {
   "name": "@captureze/mcp",
   "version": "0.1.0",
-  "description": "Model Context Protocol server for Captureze — scheduled website screenshots, visual diffs and capture certificates for AI agents",
+  "description": "Model Context Protocol server for Captureze \u2014 scheduled website screenshots, visual diffs and capture certificates for AI agents",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -17,11 +17,16 @@
     "docs"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
     "dev": "node --experimental-strip-types src/index.ts",
     "http": "node --experimental-strip-types src/index.ts --http",
+    "cli": "node --experimental-strip-types src/index.ts",
     "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -36,12 +41,19 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
-    "typescript": "^5.9.3"
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0"
   }
 }

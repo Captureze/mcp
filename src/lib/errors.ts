@@ -22,7 +22,7 @@ export class CapturezeApiError extends Error {
       case 401:
         return 'The Captureze API key is missing or invalid. Set CAPTUREZE_API_KEY (stdio) or send it as `Authorization: Bearer cap_...` (HTTP).';
       case 402:
-        return 'This account\'s plan does not cover the request. Report the limit to the user — do not retry.';
+        return "This account's plan does not cover the request. Report the limit to the user — do not retry.";
       case 403:
         return 'The API key is valid but not allowed to do this.';
       case 404:
@@ -47,7 +47,7 @@ export class CapturezeTimeoutError extends Error {
     super(
       `Captureze did not respond within ${Math.round(timeoutMs / 1000)}s (${path}). ` +
         'Captures run a real browser through a proxy and can be slow; the capture may still complete — ' +
-        'check the site\'s capture history before retrying.',
+        "check the site's capture history before retrying.",
     );
     this.name = 'CapturezeTimeoutError';
   }

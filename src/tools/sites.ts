@@ -11,23 +11,52 @@ import { siteLabel } from '../lib/url.ts';
  */
 
 const captureSettings = {
-  full_page: z.boolean().optional().describe('Capture the whole scrollable page instead of just the viewport.'),
+  full_page: z
+    .boolean()
+    .optional()
+    .describe('Capture the whole scrollable page instead of just the viewport.'),
   viewport_preset: z
     .enum(['desktop', 'laptop', 'tablet', 'mobile', 'custom'])
     .optional()
     .describe('Device preset. tablet/mobile need the Starter plan or higher.'),
-  width: z.number().int().min(320).max(3840).optional().describe('Viewport width, with viewport_preset "custom".'),
-  height: z.number().int().min(240).max(4320).optional().describe('Viewport height, with viewport_preset "custom".'),
-  output_format: z.enum(['png', 'jpeg', 'pdf']).optional().describe('Output format. pdf needs the Starter plan or higher.'),
+  width: z
+    .number()
+    .int()
+    .min(320)
+    .max(3840)
+    .optional()
+    .describe('Viewport width, with viewport_preset "custom".'),
+  height: z
+    .number()
+    .int()
+    .min(240)
+    .max(4320)
+    .optional()
+    .describe('Viewport height, with viewport_preset "custom".'),
+  output_format: z
+    .enum(['png', 'jpeg', 'pdf'])
+    .optional()
+    .describe('Output format. pdf needs the Starter plan or higher.'),
   geo_country: z
     .string()
     .regex(/^[A-Z]{2}$/)
     .optional()
     .describe('Capture from this country (ISO 3166-1 alpha-2, e.g. "DE"). Needs the Pro plan or higher.'),
-  geo_city: z.string().max(100).optional().describe('Capture from this city. Requires geo_country and the Business plan.'),
+  geo_city: z
+    .string()
+    .max(100)
+    .optional()
+    .describe('Capture from this city. Requires geo_country and the Business plan.'),
   wait_for_selector: z.string().max(500).optional().describe('CSS selector to wait for before capturing.'),
-  hide_selectors: z.array(z.string().max(500)).max(50).optional().describe('CSS selectors hidden before capturing (cookie bars, chat widgets).'),
-  dismiss_cookie_banners: z.boolean().optional().describe('Try to dismiss the cookie banner before capturing.'),
+  hide_selectors: z
+    .array(z.string().max(500))
+    .max(50)
+    .optional()
+    .describe('CSS selectors hidden before capturing (cookie bars, chat widgets).'),
+  dismiss_cookie_banners: z
+    .boolean()
+    .optional()
+    .describe('Try to dismiss the cookie banner before capturing.'),
 } as const;
 
 export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
@@ -77,7 +106,7 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         'Creates a site that Captureze re-captures on a cron schedule and diffs against the previous capture. ' +
         'Use this when the user wants ongoing tracking ("watch this page", "tell me when it changes"). ' +
         'For a single screenshot right now, use captureze_capture_url instead. ' +
-        'Counts against the account\'s site limit.',
+        "Counts against the account's site limit.",
       inputSchema: {
         url: z.string().url().describe('Page to monitor.'),
         cron_expression: z
@@ -90,7 +119,9 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
           .string()
           .max(64)
           .optional()
-          .describe('IANA timezone the cron is written in, e.g. "Europe/Berlin". Defaults to the server zone.'),
+          .describe(
+            'IANA timezone the cron is written in, e.g. "Europe/Berlin". Defaults to the server zone.',
+          ),
         diff_threshold: z
           .number()
           .int()
@@ -98,10 +129,18 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
           .max(100)
           .optional()
           .describe('Percent of changed pixels that counts as a real change (default 5).'),
-        notify_on_diff: z.boolean().optional().describe('Notify the account owner when a change exceeds the threshold.'),
+        notify_on_diff: z
+          .boolean()
+          .optional()
+          .describe('Notify the account owner when a change exceeds the threshold.'),
         ...captureSettings,
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     guard(async ({ url, name, ...rest }) => {
       const schedule = await ctx.client.createSchedule({
@@ -130,7 +169,10 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         url: z.string().url().optional(),
         cron_expression: z.string().min(5).max(100).optional(),
         timezone: z.string().max(64).optional(),
-        is_active: z.boolean().optional().describe('false pauses scheduled captures; manual captures still work.'),
+        is_active: z
+          .boolean()
+          .optional()
+          .describe('false pauses scheduled captures; manual captures still work.'),
         diff_threshold: z.number().int().min(1).max(100).optional(),
         notify_on_diff: z.boolean().optional(),
         ...captureSettings,

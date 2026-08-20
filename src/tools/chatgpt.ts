@@ -86,7 +86,8 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
                 (capture.diff_percent === null || capture.diff_percent === undefined
                   ? 'No diff against a previous capture.'
                   : `${Number(capture.diff_percent).toFixed(2)}% changed vs the previous capture.`),
-              url: resolveCaptureUrl(capture, ctx.client.baseUrl) ?? siteConsoleUrl(ctx.client.baseUrl, site.id),
+              url:
+                resolveCaptureUrl(capture, ctx.client.baseUrl) ?? siteConsoleUrl(ctx.client.baseUrl, site.id),
             });
           }
         }
@@ -107,7 +108,9 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
         'Fetches the full record behind an id returned by `search`: a monitored page with its settings and recent ' +
         'captures, or one capture with its change percentage and image URL.',
       inputSchema: {
-        id: z.string().describe('Id from `search`, e.g. "site:<uuid>" or "capture:<site-uuid>:<capture-uuid>".'),
+        id: z
+          .string()
+          .describe('Id from `search`, e.g. "site:<uuid>" or "capture:<site-uuid>:<capture-uuid>".'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

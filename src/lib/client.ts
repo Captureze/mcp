@@ -110,9 +110,7 @@ export class CapturezeClient {
     if (!response.ok) {
       const payload = (parsed ?? {}) as Record<string, unknown>;
       const message =
-        typeof payload.error === 'string'
-          ? payload.error
-          : text.slice(0, 300) || `${method} ${path} failed`;
+        typeof payload.error === 'string' ? payload.error : text.slice(0, 300) || `${method} ${path} failed`;
       throw new CapturezeApiError(
         response.status,
         message,
@@ -189,10 +187,7 @@ export class CapturezeClient {
   // ---- evidence ----------------------------------------------------------
 
   getCertificate(screenshotId: string): Promise<CaptureCertificate> {
-    return this.request<CaptureCertificate>(
-      'GET',
-      `/certificates/${encodeURIComponent(screenshotId)}/data`,
-    );
+    return this.request<CaptureCertificate>('GET', `/certificates/${encodeURIComponent(screenshotId)}/data`);
   }
 
   // ---- GDPR consent vertical --------------------------------------------
@@ -206,10 +201,7 @@ export class CapturezeClient {
   }
 
   getConsentDetection(jobId: string): Promise<ConsentDetectionResponse> {
-    return this.request<ConsentDetectionResponse>(
-      'GET',
-      `/consent/detect/${encodeURIComponent(jobId)}`,
-    );
+    return this.request<ConsentDetectionResponse>('GET', `/consent/detect/${encodeURIComponent(jobId)}`);
   }
 
   // ---- account -----------------------------------------------------------

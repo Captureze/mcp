@@ -14,7 +14,10 @@ import {
 import type { Screenshot } from '../lib/types.ts';
 
 const captureOptions = {
-  full_page: z.boolean().optional().describe('Capture the whole scrollable page instead of just the viewport.'),
+  full_page: z
+    .boolean()
+    .optional()
+    .describe('Capture the whole scrollable page instead of just the viewport.'),
   viewport_preset: z
     .enum(['desktop', 'laptop', 'tablet', 'mobile', 'custom'])
     .optional()
@@ -79,7 +82,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       title: 'Capture a URL now',
       description:
         'Takes a screenshot of a URL right now and returns the image plus how much it changed since the last capture ' +
-        'of the same URL. Captures run through Captureze\'s residential/datacenter proxy pool, so bot-protected and ' +
+        "of the same URL. Captures run through Captureze's residential/datacenter proxy pool, so bot-protected and " +
         'geo-restricted pages work. This is the tool for "show me what this page looks like". ' +
         'The URL is stored as a site so later captures can be diffed against this one; a site for the same URL is ' +
         'reused instead of duplicated, and new ones are created paused unless monitor is true. ' +
@@ -102,7 +105,12 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           .describe('Return the image itself, not just its URL (default true).'),
         ...captureOptions,
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     guard(async ({ url, monitor, cron_expression, include_image, ...settings }) => {
       const { schedule, created } = await ensureSiteForUrl({
@@ -114,9 +122,10 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       });
 
       const screenshot = await ctx.client.capture(schedule.id);
-      const { blocks, note } = (include_image ?? true)
-        ? await imageContent(ctx, screenshot)
-        : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
+      const { blocks, note } =
+        (include_image ?? true)
+          ? await imageContent(ctx, screenshot)
+          : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
 
       const prefix = created
         ? `Captured ${url} (new site "${schedule.name}", id ${schedule.id}, ${monitor ? `monitoring on "${schedule.cron_expression}"` : 'paused — no scheduled captures'}).`
@@ -145,13 +154,19 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         include_image: z.boolean().optional().describe('Return the image itself (default true).'),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     guard(async ({ site_id, include_image }) => {
       const screenshot = await ctx.client.capture(site_id);
-      const { blocks, note } = (include_image ?? true)
-        ? await imageContent(ctx, screenshot)
-        : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
+      const { blocks, note } =
+        (include_image ?? true)
+          ? await imageContent(ctx, screenshot)
+          : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
       return toolResult(
         `${captureSummary(screenshot, ctx.client.baseUrl, `Captured site ${site_id}.`)}\n${note}`,
         describeCapture(screenshot, ctx.client.baseUrl),
@@ -204,9 +219,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
     },
     guard(async ({ site_id, capture_id, variant }) => {
       const screenshots = await ctx.client.listScreenshots(site_id, 100);
-      const screenshot = capture_id
-        ? screenshots.find((shot) => shot.id === capture_id)
-        : screenshots[0];
+      const screenshot = capture_id ? screenshots.find((shot) => shot.id === capture_id) : screenshots[0];
 
       if (!screenshot) {
         return toolResult(
@@ -231,10 +244,10 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
 
       const image = await ctx.client.downloadImage(target);
       if (image.bytes > ctx.config.maxInlineImageBytes) {
-        return toolResult(
-          `Image is ${formatBytes(image.bytes)}, too large to inline — open ${target}`,
-          { ...described, inlined: false },
-        );
+        return toolResult(`Image is ${formatBytes(image.bytes)}, too large to inline — open ${target}`, {
+          ...described,
+          inlined: false,
+        });
       }
 
       return toolResult(

@@ -19,7 +19,9 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
           .string()
           .regex(/^[A-Z]{2}$/)
           .optional()
-          .describe('Probe from this country — banners differ by jurisdiction. Needs the Pro plan or higher.'),
+          .describe(
+            'Probe from this country — banners differ by jurisdiction. Needs the Pro plan or higher.',
+          ),
         geo_city: z.string().max(100).optional().describe('Requires geo_country and the Business plan.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },

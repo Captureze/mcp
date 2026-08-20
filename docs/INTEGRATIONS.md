@@ -48,7 +48,7 @@ claude mcp add --transport http captureze https://mcp.example.com/mcp \
 
 Deploy the HTTP transport behind HTTPS and add it as a custom connector pointing at
 `https://mcp.example.com/mcp`. Connectors that support custom headers can pass the API key
-directly; without header support, the deployment needs OAuth in front of it (see *Roadmap*).
+directly; without header support, the deployment needs OAuth in front of it (see _Roadmap_).
 
 ## ChatGPT (developer mode / deep research connector)
 
@@ -145,11 +145,11 @@ docker run -d --name captureze-mcp -p 8787:8787 \
 
 ## Errors an agent will meet
 
-| Status | Meaning | What the agent should do |
-| --- | --- | --- |
-| 401 | Key missing or invalid | Stop; ask the user for a valid `cap_...` key |
-| 402 | Plan limit or gated feature (`SCHEDULE_LIMIT`, `SCREENSHOT_LIMIT`, `INTERVAL_LIMIT`, `FEATURE_REQUIRED`) | Report what needs upgrading — never retry |
-| 429 | Rate limited (global, or 20 consent detections/day) | Back off |
-| 5xx | Capture or upstream failure | Retry once, then report |
+| Status | Meaning                                                                                                  | What the agent should do                     |
+| ------ | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 401    | Key missing or invalid                                                                                   | Stop; ask the user for a valid `cap_...` key |
+| 402    | Plan limit or gated feature (`SCHEDULE_LIMIT`, `SCREENSHOT_LIMIT`, `INTERVAL_LIMIT`, `FEATURE_REQUIRED`) | Report what needs upgrading — never retry    |
+| 429    | Rate limited (global, or 20 consent detections/day)                                                      | Back off                                     |
+| 5xx    | Capture or upstream failure                                                                              | Retry once, then report                      |
 
 Every one comes back as a tool error whose text already carries this guidance.

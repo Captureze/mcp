@@ -49,7 +49,9 @@ export function guard<Args>(
  */
 export function resolveCaptureUrl(screenshot: Screenshot, baseUrl: string): string | null {
   const candidate =
-    screenshot.url ?? screenshot.storage_url ?? (screenshot.file_path ? `/screenshots/${screenshot.file_path}` : null);
+    screenshot.url ??
+    screenshot.storage_url ??
+    (screenshot.file_path ? `/screenshots/${screenshot.file_path}` : null);
   if (!candidate) return null;
   try {
     return new URL(candidate, `${baseUrl}/`).toString();
@@ -82,9 +84,7 @@ export function describeSchedule(schedule: Schedule): Record<string, unknown> {
         : `${schedule.width ?? 1920}x${schedule.height ?? 1080}`,
     full_page: schedule.full_page ?? false,
     output_format: schedule.output_format ?? 'png',
-    geo: schedule.geo_country
-      ? [schedule.geo_city, schedule.geo_country].filter(Boolean).join(', ')
-      : null,
+    geo: schedule.geo_country ? [schedule.geo_city, schedule.geo_country].filter(Boolean).join(', ') : null,
     last_capture_at: schedule.last_screenshot_at ?? null,
     last_diff_percent: schedule.last_diff_percent ?? null,
   };

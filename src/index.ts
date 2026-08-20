@@ -1,8 +1,14 @@
 #!/usr/bin/env node
+import { config as loadDotenv } from 'dotenv';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig } from './lib/config.ts';
 import { createCapturezeServer, SERVER_VERSION } from './server.ts';
 import { startHttpServer } from './http.ts';
+import { isCliInvocation, runCli } from './cli/index.ts';
+
+// `quiet` is not optional: dotenv announces itself on stdout, and stdout is the
+// MCP stdio transport. One banner line and every client fails to parse the stream.
+loadDotenv({ quiet: true });
 
 interface Cli {
   http: boolean;
@@ -28,7 +34,10 @@ function parseArgs(argv: string[]): Cli {
     if (arg === '--port' && next) cli.port = Number.parseInt(next, 10);
     if (arg === '--host' && next) cli.host = next;
     if (arg === '--allowed-hosts' && next) {
-      cli.allowedHosts = next.split(',').map((entry) => entry.trim()).filter(Boolean);
+      cli.allowedHosts = next
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
     }
   }
   return cli;
@@ -39,6 +48,7 @@ function usage(): string {
 
   captureze-mcp                 MCP server over stdio (Claude Code, Claude Desktop, OpenClaw, local agents)
   captureze-mcp --http          MCP server over Streamable HTTP (ChatGPT connectors, hosted agents)
+  captureze-mcp <command>       run one tool by hand — see 'captureze-mcp --help'
 
 Options
   --port <n>            HTTP port (default 8787, or $PORT)
@@ -50,11 +60,21 @@ Environment
                         request carries no Authorization header.
   CAPTUREZE_BASE_URL    Captureze install (default https://captureze.com)
   CAPTUREZE_TIMEOUT_MS  Upstream timeout in ms (default 180000)
+
+A .env file in the working directory is loaded automatically.
 `;
 }
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+
+  // A command word means the human is driving; anything else starts the server,
+  // so every existing client config keeps working untouched.
+  if (isCliInvocation(argv)) {
+    await runCli(argv);
+    return;
+  }
+
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(usage());
     return;

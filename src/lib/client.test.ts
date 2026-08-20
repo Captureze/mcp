@@ -22,16 +22,15 @@ const json = (body: unknown, status = 200) =>
 
 describe('CapturezeClient', () => {
   it('authenticates with a bearer API key against /api', async () => {
-    const { calls, fetchImpl } = stubFetch(() => json([{ id: 'a', name: 'x', url: 'https://x.dev', cron_expression: '0 3 * * *' }]));
+    const { calls, fetchImpl } = stubFetch(() =>
+      json([{ id: 'a', name: 'x', url: 'https://x.dev', cron_expression: '0 3 * * *' }]),
+    );
     const client = new CapturezeClient({ baseUrl: 'https://captureze.com/', apiKey: 'cap_test', fetchImpl });
 
     await client.listSchedules();
 
     assert.equal(calls[0]!.url, 'https://captureze.com/api/schedules');
-    assert.equal(
-      (calls[0]!.init!.headers as Record<string, string>).Authorization,
-      'Bearer cap_test',
-    );
+    assert.equal((calls[0]!.init!.headers as Record<string, string>).Authorization, 'Bearer cap_test');
   });
 
   it('surfaces plan limits as an actionable error', async () => {
