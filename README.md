@@ -99,11 +99,10 @@ Prompts: `watch-page`, `evidence-pack`, `consent-audit`.
 
 ### How ad-hoc captures are stored
 
-Captureze keeps every capture against a *site*, so `captureze_capture_url` needs one. Rather
-than creating a throwaway site per call — which would exhaust the account's site limit in a few
-agent turns — it reuses an existing site for the same URL, and creates new ones **paused**
-(`is_active: false`) so they never fire on their own. Pass `monitor: true` to keep the schedule
-running instead.
+Every capture belongs to a *site*, which is what gives it history, diffs and certificates. So
+`captureze_capture_url` files its capture under a site for that URL: an existing one if the
+account already has it, otherwise a new one created **paused** (`is_active: false`), which
+captures on request and never on its own. Pass `monitor: true` to have it run on a schedule too.
 
 ## Configuration
 

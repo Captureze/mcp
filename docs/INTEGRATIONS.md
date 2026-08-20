@@ -153,15 +153,3 @@ docker run -d --name captureze-mcp -p 8787:8787 \
 | 5xx | Capture or upstream failure | Retry once, then report |
 
 Every one comes back as a tool error whose text already carries this guidance.
-
-## Roadmap
-
-- **OAuth 2.1 / protected resource metadata** — for connector UIs that cannot attach a custom
-  header, and to stop users pasting API keys into hosted clients.
-- **One-shot capture endpoint** — the API stores captures against a site, so ad-hoc captures
-  currently create a paused one. A dedicated endpoint would remove that bookkeeping and stop
-  ad-hoc captures counting against the site limit.
-- **MCP 2026-07-28** — bump when the TypeScript SDK negotiates it; the transport is already
-  stateless.
-- **Notifications** — surface "this page changed" as a server-initiated event instead of the
-  agent polling `captureze_list_captures`.
