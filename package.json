@@ -4,6 +4,17 @@
   "description": "Model Context Protocol server for Captureze \u2014 scheduled website screenshots, visual diffs and capture certificates for AI agents",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Captureze/mcp.git"
+  },
+  "homepage": "https://github.com/Captureze/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Captureze/mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
