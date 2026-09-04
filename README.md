@@ -164,6 +164,20 @@ npm run typecheck
 npm run build
 ```
 
+## Releasing
+
+The package is published to npm as `@captureze/mcp` — that is what makes `npx -y @captureze/mcp`
+work. Tagging is the trigger:
+
+```bash
+npm version patch          # or minor / major
+git push --follow-tags
+```
+
+The release workflow runs lint, format, typecheck, tests and build, checks the tag matches
+`package.json`, and publishes with provenance. It needs an `NPM_TOKEN` repository secret (an npm
+automation token), unless the repo is set up as a trusted publisher on npm.
+
 ## License
 
 MIT

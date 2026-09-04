@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Model Context Protocol server for Captureze \u2014 scheduled website screenshots, visual diffs and capture certificates for AI agents",
   "license": "MIT",
+  "author": "Captureze",
   "type": "module",
   "repository": {
     "type": "git",
