@@ -2,11 +2,15 @@
 
 One server, two transports:
 
+- **Streamable HTTP** (`POST /mcp`) — the client calls a URL and sends its own
+  `Authorization: Bearer cap_...` per request. Use it for hosted clients (ChatGPT, claude.ai,
+  server-side agents). **We run this for you at `https://mcp.captureze.com/mcp`** — nothing to
+  install, nothing to deploy.
 - **stdio** — the client starts the process; the API key comes from `CAPTUREZE_API_KEY`.
   Use it for agents running on the user's machine.
-- **Streamable HTTP** (`--http`, `POST /mcp`) — the client calls a URL and sends its own
-  `Authorization: Bearer cap_...` per request. Use it for hosted clients (ChatGPT, claude.ai,
-  server-side agents) and for one deployment serving many users.
+
+Run the HTTP transport yourself only if you point at a self-hosted Captureze install, or want the
+endpoint inside your own network — see [Self-hosting the HTTP transport](#self-hosting-the-http-transport).
 
 Protocol note: the server is built on `@modelcontextprotocol/sdk` 1.30.x, which negotiates
 `2025-11-25` and accepts older revisions down to `2024-11-05`. The HTTP transport already runs
@@ -21,10 +25,10 @@ spec standardises, so moving to it is an SDK bump rather than a rewrite.
 claude mcp add captureze --env CAPTUREZE_API_KEY=cap_xxx -- npx -y @captureze/mcp
 ```
 
-Remote instead:
+Remote instead — no local install, no Node:
 
 ```bash
-claude mcp add --transport http captureze https://mcp.example.com/mcp \
+claude mcp add --transport http captureze https://mcp.captureze.com/mcp \
   --header "Authorization: Bearer cap_xxx"
 ```
 
@@ -46,9 +50,30 @@ claude mcp add --transport http captureze https://mcp.example.com/mcp \
 
 ## claude.ai (remote connector)
 
-Deploy the HTTP transport behind HTTPS and add it as a custom connector pointing at
-`https://mcp.example.com/mcp`. Connectors that support custom headers can pass the API key
-directly; without header support, the deployment needs OAuth in front of it (see _Roadmap_).
+Add a custom connector pointing at:
+
+```
+https://mcp.captureze.com/mcp
+```
+
+**Caveat, checked 6 September 2026:** claude.ai's _Add custom connector_ dialog takes the URL and,
+under **Advanced settings**, an OAuth Client ID and Client Secret — there is no field for a bearer
+token or an arbitrary header
+([anthropics/claude-ai-mcp#112](https://github.com/anthropics/claude-ai-mcp/issues/112) is open on
+exactly this). This endpoint authenticates with `Authorization: Bearer cap_...` and does not
+implement OAuth yet, so the connector cannot currently authenticate itself from the claude.ai web
+UI.
+
+Until either side changes, connect from Claude Code instead — its remote transport does pass the
+header:
+
+```bash
+claude mcp add -s user --transport http captureze https://mcp.captureze.com/mcp \
+  --header "Authorization: Bearer cap_xxx"
+```
+
+Claude Desktop and other clients that accept a `headers` block in their MCP config can point at
+the same URL.
 
 ## ChatGPT (developer mode / deep research connector)
 
@@ -56,9 +81,9 @@ ChatGPT connects only to **remote** MCP servers — no stdio — and, in deep re
 two tools: `search` and `fetch`. This server ships both, backed by the same account data as the
 `captureze_*` tools, so it registers cleanly:
 
-1. Deploy the HTTP transport behind HTTPS (`https://mcp.example.com/mcp`).
-2. In ChatGPT: **Settings → Apps → Advanced settings → Developer mode**.
-3. Add a custom connector with that URL and the API key as an `Authorization` header.
+1. In ChatGPT: **Settings → Apps → Advanced settings → Developer mode**.
+2. Add a custom connector with the URL `https://mcp.captureze.com/mcp`.
+3. Set the API key as an `Authorization: Bearer cap_...` header.
 
 Custom connectors are available on Pro, Plus, Business, Enterprise and Edu plans; on managed
 workspaces an admin has to permit them first.
@@ -124,14 +149,20 @@ model can read the page; models without vision should pass `include_image: false
 
 ---
 
-## Operating the HTTP deployment
+## Self-hosting the HTTP transport
+
+Only needed for a self-hosted Captureze install or an endpoint inside your own network —
+`https://mcp.captureze.com/mcp` is already running against captureze.com.
 
 ```bash
 docker run -d --name captureze-mcp -p 8787:8787 \
   -e HOST=0.0.0.0 \
   -e CAPTUREZE_MCP_ALLOWED_HOSTS=mcp.example.com \
-  captureze-mcp --http
+  ghcr.io/captureze/mcp:latest --http
 ```
+
+Images are published to `ghcr.io/captureze/mcp`: `:latest` and an immutable `:main-<short-sha>`
+from `main`, plus `:<version>` on each `v*` release tag. Pin an immutable tag in production.
 
 - Terminate TLS in front of it; MCP clients require HTTPS.
 - Keep `CAPTUREZE_MCP_ALLOWED_HOSTS` set to the public hostname — it blocks DNS-rebinding.
