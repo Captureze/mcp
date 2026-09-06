@@ -16,18 +16,28 @@ with MCP support.
 
 ## Requirements
 
-- Node.js 20+
 - A Captureze API key (`cap_...`) — Captureze console → **Settings → API keys**
+- Node.js 20+ — only if you run the server yourself (stdio, or a self-hosted HTTP deployment)
 
 ## Quick start
 
-```bash
-# stdio (local agents)
-CAPTUREZE_API_KEY=cap_xxx npx -y @captureze/mcp
+**Remote clients** (claude.ai, ChatGPT, hosted agents) — point them at the endpoint we run:
 
-# streamable HTTP (remote connectors)
-CAPTUREZE_API_KEY=cap_xxx npx -y @captureze/mcp --http --port 8787
 ```
+https://mcp.captureze.com/mcp
+```
+
+Authenticate each request with `Authorization: Bearer cap_...`. There is nothing to install and
+nothing to deploy.
+
+**Local clients** (Claude Code, Claude Desktop, OpenClaw) — run it over stdio:
+
+```bash
+CAPTUREZE_API_KEY=cap_xxx npx -y @captureze/mcp
+```
+
+You can also run the HTTP transport yourself; see
+[Self-hosting the HTTP transport](#self-hosting-the-http-transport).
 
 ## Connect it
 
@@ -51,11 +61,25 @@ claude mcp add captureze --env CAPTUREZE_API_KEY=cap_xxx -- npx -y @captureze/mc
 }
 ```
 
+### Claude Code (remote)
+
+```bash
+claude mcp add -s user --transport http captureze https://mcp.captureze.com/mcp \
+  --header "Authorization: Bearer cap_xxx"
+```
+
 ### ChatGPT (custom connector, developer mode)
 
-ChatGPT only talks to **remote** servers, so run the HTTP transport behind HTTPS and register
-`https://your-host/mcp`. The server ships the `search` and `fetch` tools ChatGPT requires
-alongside the `captureze_*` ones. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+ChatGPT only talks to **remote** servers. Add a custom connector pointing at
+`https://mcp.captureze.com/mcp` with your API key as an `Authorization: Bearer cap_...` header —
+the server ships the `search` and `fetch` tools ChatGPT requires alongside the `captureze_*` ones.
+See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
+### claude.ai (custom connector)
+
+Add `https://mcp.captureze.com/mcp` as a custom connector. Whether you can attach the
+`Authorization` header depends on your plan's connector UI — see
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for what works today.
 
 ### OpenClaw
 
@@ -136,13 +160,27 @@ client configs are unaffected.
 
 A `.env` file in the working directory is loaded on startup.
 
-## Running the HTTP transport
+## Self-hosting the HTTP transport
+
+You do not need this to use Captureze from a remote client — `https://mcp.captureze.com/mcp` is
+already running. Self-host when you point at a **self-hosted Captureze install**, or when you want
+the endpoint inside your own network.
 
 ```bash
+# published image
+docker run --rm -p 8787:8787 -e HOST=0.0.0.0 \
+  -e CAPTUREZE_MCP_ALLOWED_HOSTS=mcp.example.com \
+  ghcr.io/captureze/mcp:latest --http
+
+# or build it from this repo
 docker build -t captureze-mcp .
 docker run --rm -p 8787:8787 -e HOST=0.0.0.0 \
   -e CAPTUREZE_MCP_ALLOWED_HOSTS=mcp.example.com captureze-mcp --http
 ```
+
+Images are published to `ghcr.io/captureze/mcp` on every push to `main` (`:latest` and an
+immutable `:main-<short-sha>`) and on every `v*` release tag (`:0.1.0`). Pin an immutable tag in
+production — never `:latest`.
 
 The HTTP transport is **stateless and multi-tenant**: each request carries its own
 `Authorization: Bearer cap_...`, a fresh server instance handles it, and nothing about one
