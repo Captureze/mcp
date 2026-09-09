@@ -59,7 +59,7 @@ function fakeApi({ sites = [], captureStatus = 200, captureBody = CAPTURE }: Rou
 async function connect(fetchImpl: FetchLike, includeChatGptTools = true) {
   const server = createCapturezeServer({
     config: CONFIG,
-    apiKey: 'cap_test',
+    accessToken: 'cap_test',
     fetchImpl,
     includeChatGptTools,
   });
