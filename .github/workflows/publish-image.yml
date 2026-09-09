@@ -5,14 +5,19 @@ name: Publish image
 #
 # Tags:
 #   main branch  -> :latest and an immutable :main-<short-sha>
+#   other branch -> an immutable :branch-<short-sha>, never :latest
 #   v* git tag   -> :<version> (e.g. :0.1.0), :<major>.<minor>, and :latest
 #   pull request -> built only, never pushed (this is the Dockerfile's CI)
+#
+# Branch builds exist so a change can be pinned on staging and verified against
+# a real client before it reaches main. Without them the only way to stage an
+# MCP change is to merge it first, which is the wrong order.
 #
 # Production pins an immutable tag — :latest is for convenience and local trials
 # only. See docs/MCP_HOSTED_CONNECTOR.md in the captureze-one-shot repo.
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -53,6 +58,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=main-,format=short,enable={{is_default_branch}}
+            # Immutable, and deliberately not :latest — a branch image is for
+            # pinning on staging, not for anyone who pulls the default tag.
+            type=sha,prefix=branch-,format=short,enable=${{ github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             # Never pushed (see `push:` below) — it just stops metadata-action
