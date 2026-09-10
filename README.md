@@ -77,9 +77,10 @@ See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ### claude.ai (custom connector)
 
-Add `https://mcp.captureze.com/mcp` as a custom connector. Whether you can attach the
-`Authorization` header depends on your plan's connector UI — see
-[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for what works today.
+Add `https://mcp.captureze.com/mcp` as a custom connector and press connect: the endpoint speaks
+OAuth 2.1, so you sign in with the same Captureze account you use on the site and there is no key
+to paste. Clients that can attach an `Authorization` header may still use an API key instead —
+both work, on the same endpoint. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ### OpenClaw
 
@@ -160,6 +161,22 @@ client configs are unaffected.
 
 A `.env` file in the working directory is loaded on startup.
 
+### OAuth (HTTP transport, optional)
+
+Set these to let clients that can only authenticate by OAuth — the claude.ai connector dialog
+among them — sign in against a Clerk instance. Leave them unset and none of it loads: the
+endpoint stays exactly what it is on an API key, which is what a self-hosted install wants.
+
+| Variable                   | Meaning                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `CLERK_PUBLISHABLE_KEY`    | `pk_live_…` / `pk_test_…`. Names the authorization server              |
+| `CLERK_SECRET_KEY`         | `sk_live_…` / `sk_test_…`. Verifies access tokens                      |
+| `CAPTUREZE_MCP_PUBLIC_URL` | This endpoint's public origin. Defaults to what the request says it is |
+
+With them set the server publishes `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and
+mirrors the issuer's `/.well-known/oauth-authorization-server` (RFC 8414), and a `401` carries the
+`resource_metadata` pointer that lets a connector find them. API keys keep working unchanged.
+
 ## Self-hosting the HTTP transport
 
 You do not need this to use Captureze from a remote client — `https://mcp.captureze.com/mcp` is
@@ -182,8 +199,8 @@ Images are published to `ghcr.io/captureze/mcp` on every push to `main` (`:lates
 immutable `:main-<short-sha>`) and on every `v*` release tag (`:0.1.0`). Pin an immutable tag in
 production — never `:latest`.
 
-The HTTP transport is **stateless and multi-tenant**: each request carries its own
-`Authorization: Bearer cap_...`, a fresh server instance handles it, and nothing about one
+The HTTP transport is **stateless and multi-tenant**: each request carries its own credential —
+an API key, or an OAuth access token — a fresh server instance handles it, and nothing about one
 caller survives into the next request. Any instance can answer any request, so it scales behind
 an ordinary load balancer with no sticky sessions.
 

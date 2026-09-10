@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './lib/config.ts';
 import { createCapturezeServer, SERVER_VERSION } from './server.ts';
 import { startHttpServer } from './http.ts';
+import { ClerkOAuthProvider, loadOAuthConfig } from './lib/oauth.ts';
 import { isCliInvocation, runCli } from './cli/index.ts';
 
 // `quiet` is not optional: dotenv announces itself on stdout, and stdout is the
@@ -61,6 +62,16 @@ Environment
   CAPTUREZE_BASE_URL    Captureze install (default https://captureze.com)
   CAPTUREZE_TIMEOUT_MS  Upstream timeout in ms (default 180000)
 
+OAuth (--http only, optional)
+  Set both Clerk variables to let clients that can only speak OAuth — the claude.ai
+  connector dialog among them — authorize against the same Clerk that logs into the
+  app. API keys keep working exactly as before. Leave them unset and none of it loads.
+
+  CLERK_PUBLISHABLE_KEY      pk_live_... / pk_test_... (names the authorization server)
+  CLERK_SECRET_KEY           sk_live_... / sk_test_... (verifies access tokens)
+  CAPTUREZE_MCP_PUBLIC_URL   this endpoint's public origin, e.g. https://mcp.captureze.com
+                             (default: taken from the request)
+
 A .env file in the working directory is loaded automatically.
 `;
 }
@@ -88,11 +99,15 @@ async function main(): Promise<void> {
   const config = loadConfig();
 
   if (cli.http) {
+    // OAuth is opt-in and configuration-driven: no Clerk variables, no OAuth,
+    // and a self-hosted endpoint behaves exactly as it did before.
+    const oauthConfig = loadOAuthConfig();
     await startHttpServer({
       config,
       port: cli.port,
       host: cli.host,
       allowedHosts: cli.allowedHosts,
+      oauth: oauthConfig ? new ClerkOAuthProvider(oauthConfig) : undefined,
     });
     return;
   }
@@ -104,7 +119,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const server = createCapturezeServer({ config, apiKey: config.apiKey });
+  const server = createCapturezeServer({ config, accessToken: config.apiKey });
   // stdout belongs to the protocol — every log line goes to stderr.
   await server.connect(new StdioServerTransport());
   process.stderr.write(`[captureze-mcp] stdio ready -> ${config.baseUrl}\n`);

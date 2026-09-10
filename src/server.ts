@@ -30,7 +30,13 @@ come back as errors that say what to upgrade — report them to the user instead
 
 export interface CreateServerOptions {
   config: ServerConfig;
-  apiKey: string;
+  /**
+   * Bearer credential this request runs as — a `cap_` API key or a Clerk OAuth
+   * access token already verified by the transport. Both resolve to the same
+   * Clerk user id at the API, so nothing below this line needs to know which
+   * one it was handed.
+   */
+  accessToken: string;
   /** Test seam: injected HTTP implementation. */
   fetchImpl?: FetchLike;
   /** ChatGPT-compatible `search`/`fetch` tools (default true). */
@@ -39,11 +45,11 @@ export interface CreateServerOptions {
 
 export function createCapturezeServer({
   config,
-  apiKey,
+  accessToken,
   fetchImpl,
   includeChatGptTools = true,
 }: CreateServerOptions): McpServer {
-  const client = CapturezeClient.fromConfig(config, apiKey, fetchImpl);
+  const client = CapturezeClient.fromConfig(config, accessToken, fetchImpl);
   const ctx: ToolContext = { client, config };
 
   const server = new McpServer(
