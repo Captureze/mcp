@@ -25,13 +25,36 @@ const CAPTURE = {
   created_at: '2026-08-19T10:00:00.000Z',
 };
 
+// The real shape of GET /api/billing: the plan and the trial flag live inside
+// `subscription`, and `subscription` is null when the account has none.
+const BILLING = {
+  hasSubscription: true,
+  subscription: {
+    plan: 'pro',
+    status: 'trialing',
+    isTrial: true,
+    isDormant: false,
+    trialDaysRemaining: 7,
+    trialQuotaPlan: 'starter',
+  },
+  limits: { sites: 10, screenshots: 1500, min_interval_minutes: 240, retention_days: 30 },
+  usage: { sites: 0, screenshots: 0 },
+  features: ['Full visual diff'],
+};
+
 interface RouteTable {
   sites?: unknown[];
   captureStatus?: number;
   captureBody?: unknown;
+  billing?: unknown;
 }
 
-function fakeApi({ sites = [], captureStatus = 200, captureBody = CAPTURE }: RouteTable = {}): {
+function fakeApi({
+  sites = [],
+  captureStatus = 200,
+  captureBody = CAPTURE,
+  billing = BILLING,
+}: RouteTable = {}): {
   fetchImpl: FetchLike;
   requests: string[];
 } {
@@ -46,6 +69,7 @@ function fakeApi({ sites = [], captureStatus = 200, captureBody = CAPTURE }: Rou
     if (url.endsWith('/api/schedules') && method === 'POST') {
       return json({ ...SITE, ...JSON.parse(String(init?.body)) });
     }
+    if (url.endsWith('/api/billing') && method === 'GET') return json(billing);
     if (url.includes('/capture') && method === 'POST') return json(captureBody, captureStatus);
     if (url.includes('/screenshots?')) return json([CAPTURE]);
     if (url.includes('/screenshots/')) {
@@ -184,5 +208,40 @@ describe('captureze MCP server', () => {
     assert.ok(entry && 'text' in entry);
     assert.equal(entry.mimeType, 'application/json');
     assert.match(entry.text, /example\.com/);
+  });
+
+  // The server tells the model to call this after a 402 to say what needs
+  // upgrading, so the summary line has to be able to name the current plan.
+  it('names the plan and marks the trial in the account summary', async () => {
+    const { client } = await connect(fakeApi().fetchImpl);
+
+    const result = await client.callTool({ name: 'captureze_account_status', arguments: {} });
+    const content = result.content as Array<{ type: string; text: string }>;
+    const summary = content[0]!.text.split('\n')[0];
+
+    assert.equal(summary, 'Plan: pro (trial)');
+  });
+
+  it('does not call a paid subscription a trial', async () => {
+    const billing = {
+      ...BILLING,
+      subscription: { ...BILLING.subscription, plan: 'business', status: 'active', isTrial: false },
+    };
+    const { client } = await connect(fakeApi({ billing }).fetchImpl);
+
+    const result = await client.callTool({ name: 'captureze_account_status', arguments: {} });
+    const content = result.content as Array<{ type: string; text: string }>;
+
+    assert.equal(content[0]!.text.split('\n')[0], 'Plan: business');
+  });
+
+  it('says unknown only when the account really has no subscription', async () => {
+    const billing = { hasSubscription: false, subscription: null, limits: {}, usage: {} };
+    const { client } = await connect(fakeApi({ billing }).fetchImpl);
+
+    const result = await client.callTool({ name: 'captureze_account_status', arguments: {} });
+    const content = result.content as Array<{ type: string; text: string }>;
+
+    assert.equal(content[0]!.text.split('\n')[0], 'Plan: unknown');
   });
 });

@@ -131,10 +131,27 @@ export interface ConsentDetectionResponse {
   [key: string]: unknown;
 }
 
-export interface BillingInfo {
+/**
+ * The plan and its trial state, as GET /api/billing nests them. Kept apart
+ * from BillingInfo because the endpoint returns null here for an account with
+ * no subscription row, which is the only case that has no plan to name.
+ */
+export interface BillingSubscription {
   plan?: string;
+  status?: string;
   isTrial?: boolean;
+  /** Trial over, no upgrade: the account is open but capture is paused. */
+  isDormant?: boolean;
+  trialDaysRemaining?: number | null;
+  trialQuotaPlan?: string;
+  [key: string]: unknown;
+}
+
+export interface BillingInfo {
+  hasSubscription?: boolean;
+  subscription?: BillingSubscription | null;
   limits?: Record<string, unknown>;
   usage?: Record<string, unknown>;
+  features?: unknown[];
   [key: string]: unknown;
 }
