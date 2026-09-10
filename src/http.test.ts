@@ -186,3 +186,47 @@ describe('POST /mcp with OAuth configured', () => {
     });
   });
 });
+
+describe('malformed requests', () => {
+  // A JSON-RPC endpoint that answers HTML is a surprise to every client, and
+  // express's default handler also logs the parse error as an unhandled stack
+  // trace — which anyone can trigger from the open internet, for free.
+  it('answers a JSON-RPC parse error for a body that is not JSON', async () => {
+    await withServer({}, async (base) => {
+      const response = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: 'Bearer cap_live_key',
+        },
+        body: '{not json',
+      });
+
+      assert.equal(response.status, 400);
+      assert.match(response.headers.get('content-type') ?? '', /application\/json/);
+      const body = (await response.json()) as { jsonrpc: string; error: { code: number } };
+      assert.equal(body.jsonrpc, '2.0');
+      assert.equal(body.error.code, -32700, 'the JSON-RPC code for a parse error');
+    });
+  });
+
+  it('answers a JSON-RPC error when the body is too large', async () => {
+    await withServer({}, async (base) => {
+      const response = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: 'Bearer cap_live_key',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'x', params: { blob: 'x'.repeat(5_000_000) } }),
+      });
+
+      assert.equal(response.status, 413);
+      const body = (await response.json()) as { jsonrpc: string; error: { message: string } };
+      assert.equal(body.jsonrpc, '2.0');
+      assert.match(body.error.message, /too large/i);
+    });
+  });
+});

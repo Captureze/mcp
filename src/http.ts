@@ -102,6 +102,26 @@ export function createHttpApp(options: HttpOptions) {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '4mb' }));
 
+  // express answers a malformed body with an HTML error page and logs the parse
+  // failure as an unhandled stack trace. On a public JSON-RPC endpoint that is
+  // both a surprise to clients and free log noise for anyone who sends junk.
+  app.use((error: unknown, _req: Request, res: Response, next: express.NextFunction) => {
+    if (!(error && typeof error === 'object' && 'status' in error)) return next(error);
+    const status = Number((error as { status?: number }).status) || 400;
+    const tooLarge = status === 413;
+    res.status(status).json({
+      jsonrpc: '2.0',
+      error: {
+        // -32700 is the JSON-RPC code for a body that could not be parsed.
+        code: tooLarge ? -32600 : -32700,
+        message: tooLarge
+          ? 'Request body too large: this endpoint accepts up to 4mb.'
+          : 'Parse error: the request body is not valid JSON.',
+      },
+      id: null,
+    });
+  });
+
   const allowedHosts = options.allowedHosts?.filter(Boolean) ?? [];
   if (allowedHosts.length > 0) {
     // DNS-rebinding protection for deployments that bind beyond localhost.
