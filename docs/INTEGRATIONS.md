@@ -50,30 +50,31 @@ claude mcp add --transport http captureze https://mcp.captureze.com/mcp \
 
 ## claude.ai (remote connector)
 
-Add a custom connector pointing at:
+[Add Captureze as a connector](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Captureze&connectorUrl=https%3A%2F%2Fmcp.captureze.com%2Fmcp)
+— that link opens the _Add custom connector_ dialog with the name and URL filled in, and you
+confirm it there. By hand it is the same thing: **Settings → Connectors → Add custom connector**,
+pointing at
 
 ```
 https://mcp.captureze.com/mcp
 ```
 
-**Caveat, checked 6 September 2026:** claude.ai's _Add custom connector_ dialog takes the URL and,
-under **Advanced settings**, an OAuth Client ID and Client Secret — there is no field for a bearer
-token or an arbitrary header
-([anthropics/claude-ai-mcp#112](https://github.com/anthropics/claude-ai-mcp/issues/112) is open on
-exactly this). This endpoint authenticates with `Authorization: Bearer cap_...` and does not
-implement OAuth yet, so the connector cannot currently authenticate itself from the claude.ai web
-UI.
+Press **Connect** and sign in with your Captureze account. The endpoint speaks OAuth 2.1 with
+Clerk as the authorization server, so the dialog needs nothing from you beyond the URL — no key
+to paste, and no OAuth client credentials to fill in under Advanced settings.
 
-Until either side changes, connect from Claude Code instead — its remote transport does pass the
-header:
+That matters because the dialog has no field for a bearer token or an arbitrary header
+([anthropics/claude-ai-mcp#112](https://github.com/anthropics/claude-ai-mcp/issues/112) asked for
+one). Implementing OAuth is what made the connector work from the web UI; API keys keep working
+unchanged on the same endpoint for every client that _can_ set a header.
+
+Claude Desktop and mobile read the same account-level connector list, so adding it once covers
+them. Claude Code takes either — the connector flow above, or a key on the command line:
 
 ```bash
 claude mcp add -s user --transport http captureze https://mcp.captureze.com/mcp \
   --header "Authorization: Bearer cap_xxx"
 ```
-
-Claude Desktop and other clients that accept a `headers` block in their MCP config can point at
-the same URL.
 
 ## ChatGPT (developer mode / deep research connector)
 
