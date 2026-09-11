@@ -16,8 +16,12 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext): void 
     },
     guard(async () => {
       const billing = await ctx.client.getBilling();
+      // The plan is nested under `subscription`; reading it off the top level
+      // made this line say "Plan: unknown" for every account, including the
+      // 402 case this tool exists to explain.
+      const subscription = billing.subscription;
       return toolResult(
-        `Plan: ${billing.plan ?? 'unknown'}${billing.isTrial ? ' (trial)' : ''}\n\n${jsonBlock(billing)}`,
+        `Plan: ${subscription?.plan ?? 'unknown'}${subscription?.isTrial ? ' (trial)' : ''}\n\n${jsonBlock(billing)}`,
         { account: billing },
       );
     }),
