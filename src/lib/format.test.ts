@@ -101,7 +101,12 @@ describe('describeSchedule', () => {
       name: 'apple.com',
       url: 'https://apple.com',
       cron_expression: '0 3 * * *',
-      latest_screenshot: { id: '1', file_path: 'a.png', diff_percent: null, created_at: '2026-09-15T18:27:20.430Z' },
+      latest_screenshot: {
+        id: '1',
+        file_path: 'a.png',
+        diff_percent: null,
+        created_at: '2026-09-15T18:27:20.430Z',
+      },
     });
     const neverCaptured = describeSchedule({
       id: 'def',

@@ -208,7 +208,13 @@ describe('captureze MCP server', () => {
   it('leaves a capture that honoured its country, or asked for none, reporting success', async () => {
     for (const geo_verification of [
       { status: 'confirmed', requested_country: 'DE', observed_country: 'DE', honoured: true, detail: 'ok' },
-      { status: 'not_requested', requested_country: null, observed_country: null, honoured: true, detail: 'ok' },
+      {
+        status: 'not_requested',
+        requested_country: null,
+        observed_country: null,
+        honoured: true,
+        detail: 'ok',
+      },
       undefined,
     ]) {
       const api = fakeApi({ sites: [SITE], captureBody: { ...CAPTURE, geo_verification } });

@@ -154,11 +154,7 @@ export class CapturezeClient {
    */
   capture(scheduleId: string, overrides?: Partial<ScheduleInput>): Promise<Screenshot> {
     const body = overrides && Object.keys(overrides).length > 0 ? overrides : undefined;
-    return this.request<Screenshot>(
-      'POST',
-      `/schedules/${encodeURIComponent(scheduleId)}/capture`,
-      body,
-    );
+    return this.request<Screenshot>('POST', `/schedules/${encodeURIComponent(scheduleId)}/capture`, body);
   }
 
   listScreenshots(scheduleId: string, limit = 10): Promise<Screenshot[]> {
