@@ -29,6 +29,12 @@ export class CapturezeApiError extends Error {
         return 'No such object for this account. List sites first and use an id from that list.';
       case 429:
         return 'Rate limited. Wait before retrying; do not retry in a tight loop.';
+      case 502:
+        return 'The target site refused the capture (anti-bot protection, 403 or 429). This is the page pushing back, not a Captureze fault — retrying the same URL immediately will usually fail the same way.';
+      case 503:
+        return "Captureze's proxy pool is temporarily unavailable. This is our infrastructure, not the page. Wait and retry.";
+      case 504:
+        return 'The page took too long to capture. Heavy or full-page captures can exceed the budget — retry once, and consider capturing the viewport instead of the full page.';
       default:
         return this.status >= 500
           ? 'Captureze failed to serve the request. Retry once; if it fails again, report it.'

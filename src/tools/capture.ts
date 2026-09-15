@@ -6,6 +6,7 @@ import { ensureSiteForUrl } from '../lib/ensure-site.ts';
 import {
   describeCapture,
   formatBytes,
+  geoVerificationFailure,
   guard,
   jsonBlock,
   resolveCaptureUrl,
@@ -118,10 +119,26 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         url,
         settings,
         monitor: monitor ?? false,
+        // This tool captures explicitly on the next line.
+        captureOnCreate: false,
         ...(cron_expression ? { cronExpression: cron_expression } : {}),
       });
 
-      const screenshot = await ctx.client.capture(schedule.id);
+      // The options travel with the capture rather than only with site
+      // creation. A site for this URL usually already exists, and settings
+      // applied at creation time would otherwise never reach the capture —
+      // which is how a request for Germany came back from a US datacenter.
+      const screenshot = await ctx.client.capture(schedule.id, settings);
+
+      // A country that was asked for and not confirmed is reported as a
+      // failure. The capture is kept — it is still a real capture of the page —
+      // but calling it a success is how a US screenshot ended up answering a
+      // question about Germany.
+      const geoProblem = geoVerificationFailure(screenshot, ctx.client.baseUrl);
+      if (geoProblem) {
+        return { content: [{ type: 'text', text: geoProblem }], isError: true };
+      }
+
       const { blocks, note } =
         (include_image ?? true)
           ? await imageContent(ctx, screenshot)
@@ -163,6 +180,12 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
     },
     guard(async ({ site_id, include_image }) => {
       const screenshot = await ctx.client.capture(site_id);
+
+      const geoProblem = geoVerificationFailure(screenshot, ctx.client.baseUrl);
+      if (geoProblem) {
+        return { content: [{ type: 'text', text: geoProblem }], isError: true };
+      }
+
       const { blocks, note } =
         (include_image ?? true)
           ? await imageContent(ctx, screenshot)

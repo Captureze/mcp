@@ -57,16 +57,28 @@ function fakeApi({
 }: RouteTable = {}): {
   fetchImpl: FetchLike;
   requests: string[];
+  captureBodies: Record<string, unknown>[];
+  createBodies: Record<string, unknown>[];
 } {
   const requests: string[] = [];
+  // Per-capture overrides travel in the POST body, so asserting on the URL
+  // alone cannot tell an honoured option from a dropped one.
+  const captureBodies: Record<string, unknown>[] = [];
+  const createBodies: Record<string, unknown>[] = [];
   const fetchImpl: FetchLike = async (url, init) => {
     const method = init?.method ?? 'GET';
     requests.push(`${method} ${url}`);
+    // Matched precisely: the base URL "https://captureze.com" itself contains
+    // the substring "/capture", so a loose includes() records every request.
+    if (method === 'POST' && /\/schedules\/[^/]+\/capture$/.test(url)) {
+      captureBodies.push(init?.body ? JSON.parse(String(init.body)) : {});
+    }
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
     if (url.endsWith('/api/schedules') && method === 'GET') return json(sites);
     if (url.endsWith('/api/schedules') && method === 'POST') {
+      createBodies.push(JSON.parse(String(init?.body)));
       return json({ ...SITE, ...JSON.parse(String(init?.body)) });
     }
     if (url.endsWith('/api/billing') && method === 'GET') return json(billing);
@@ -77,7 +89,7 @@ function fakeApi({
     }
     return json({ error: `unhandled ${method} ${url}` }, 500);
   };
-  return { fetchImpl, requests };
+  return { fetchImpl, requests, captureBodies, createBodies };
 }
 
 async function connect(fetchImpl: FetchLike, includeChatGptTools = true) {
@@ -115,6 +127,182 @@ describe('captureze MCP server', () => {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     assert.ok(!names.includes('search'));
     assert.ok(names.includes('captureze_capture_url'));
+  });
+
+  // Defect 2: a capture requested from one country and served from another used
+  // to report plain success, and its certificate said nothing about location.
+  it('reports a capture served from the wrong country as an error, not a success', async () => {
+    const api = fakeApi({
+      sites: [SITE],
+      captureBody: {
+        ...CAPTURE,
+        geo_verification: {
+          status: 'mismatch',
+          requested_country: 'DE',
+          observed_country: 'GB',
+          honoured: false,
+          detail: 'This capture was requested from one country but the exit IP was measured in another.',
+        },
+      },
+    });
+    const { client } = await connect(api.fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', geo_country: 'DE', include_image: false },
+    });
+
+    assert.equal(result.isError, true);
+    const text = (result.content as { type: string; text: string }[])[0]!.text;
+    assert.match(text, /DE/);
+    assert.match(text, /GB/);
+    // The capture itself is kept, so the caller must still be able to reach it.
+    assert.match(text, new RegExp(CAPTURE.id));
+  });
+
+  it('fails a mismatch reported without the honoured flag, so version skew cannot hide it', async () => {
+    const api = fakeApi({
+      sites: [SITE],
+      captureBody: {
+        ...CAPTURE,
+        // An API build that sends the verdict but not the convenience boolean.
+        geo_verification: { status: 'mismatch', requested_country: 'DE', observed_country: 'GB' },
+      },
+    });
+    const { client } = await connect(api.fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', geo_country: 'DE', include_image: false },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match((result.content as { type: string; text: string }[])[0]!.text, /GB/);
+  });
+
+  it('reports an unmeasurable exit country as an error rather than a confirmed one', async () => {
+    const api = fakeApi({
+      sites: [SITE],
+      captureBody: {
+        ...CAPTURE,
+        geo_verification: {
+          status: 'unverified',
+          requested_country: 'DE',
+          observed_country: null,
+          honoured: false,
+          detail: 'A country was requested for this capture, but the exit location could not be measured.',
+        },
+      },
+    });
+    const { client } = await connect(api.fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', geo_country: 'DE', include_image: false },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match((result.content as { type: string; text: string }[])[0]!.text, /could not be measured/i);
+  });
+
+  it('leaves a capture that honoured its country, or asked for none, reporting success', async () => {
+    for (const geo_verification of [
+      { status: 'confirmed', requested_country: 'DE', observed_country: 'DE', honoured: true, detail: 'ok' },
+      { status: 'not_requested', requested_country: null, observed_country: null, honoured: true, detail: 'ok' },
+      undefined,
+    ]) {
+      const api = fakeApi({ sites: [SITE], captureBody: { ...CAPTURE, geo_verification } });
+      const { client } = await connect(api.fetchImpl);
+      const result = await client.callTool({
+        name: 'captureze_capture_url',
+        arguments: { url: 'https://example.com', include_image: false },
+      });
+      assert.equal(result.isError, undefined, `${geo_verification?.status ?? 'absent'} must not error`);
+    }
+  });
+
+  // Defect 4: POST /api/schedules takes its own detached first screenshot, so a
+  // single capture_url produced two stored captures five seconds apart — and the
+  // tool's own diff lookup ran before the first had landed, reporting "no
+  // previous capture" against a history that was not empty.
+  it('creating a site does not also trigger a second, server-side capture', async () => {
+    const api = fakeApi({ sites: [] });
+    const { client } = await connect(api.fetchImpl);
+
+    await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', include_image: false },
+    });
+
+    const creates = api.requests.filter((r) => r === 'POST https://captureze.com/api/schedules');
+    assert.equal(creates.length, 1);
+    assert.equal(api.captureBodies.length, 1, 'exactly one capture per capture request');
+    assert.equal(
+      api.createBodies[0]!.capture_now,
+      false,
+      'the MCP takes its own capture, so the API must not take a detached one too',
+    );
+  });
+
+  // Defect 1: options reached the capture only on the request that created the
+  // site. Asking for Germany on a URL the account had seen before produced a US
+  // capture with no error — the single most damaging failure in the backlog.
+  it('applies capture options to a site that already exists, not only to a new one', async () => {
+    const existing = { ...SITE, geo_country: null, geo_city: null };
+    const api = fakeApi({ sites: [existing] });
+    const { client } = await connect(api.fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', geo_country: 'DE', full_page: true, include_image: false },
+    });
+
+    assert.equal(result.isError, undefined);
+    assert.ok(
+      !api.requests.some((request) => request.startsWith('POST https://captureze.com/api/schedules ')),
+      'the existing site must be reused, not duplicated',
+    );
+    assert.equal(api.captureBodies.length, 1);
+    assert.equal(api.captureBodies[0]!.geo_country, 'DE');
+    assert.equal(api.captureBodies[0]!.full_page, true);
+  });
+
+  it('sends no capture options when none were asked for', async () => {
+    const api = fakeApi({ sites: [SITE] });
+    const { client } = await connect(api.fetchImpl);
+
+    await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', include_image: false },
+    });
+
+    assert.deepEqual(api.captureBodies[0], {}, 'an untouched site captures with its stored settings');
+  });
+
+  it('reports a refused capture option as an error instead of capturing anyway', async () => {
+    const api = fakeApi({ sites: [SITE] });
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (url.includes('/capture') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            error: 'Geo-targeting by country requires Pro plan or higher',
+            code: 'FEATURE_REQUIRED',
+          }),
+          { status: 402, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return api.fetchImpl(url, init);
+    };
+    const { client } = await connect(fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: { url: 'https://example.com', geo_country: 'DE', include_image: false },
+    });
+
+    assert.equal(result.isError, true);
+    const [block] = result.content as { type: string; text: string }[];
+    assert.match(block!.text, /Pro plan/);
   });
 
   it('captures a URL, creating the site once, and returns the image', async () => {
