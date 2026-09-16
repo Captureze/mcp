@@ -146,8 +146,15 @@ export class CapturezeClient {
 
   // ---- captures ----------------------------------------------------------
 
-  capture(scheduleId: string): Promise<Screenshot> {
-    return this.request<Screenshot>('POST', `/schedules/${encodeURIComponent(scheduleId)}/capture`);
+  /**
+   * Runs one capture of a site. `overrides` vary the capture options for this
+   * call only — the stored site is not modified — which is how "capture this
+   * page from Germany" works on a URL the account already tracks. Omitted when
+   * empty so a plain capture keeps using the site's own settings.
+   */
+  capture(scheduleId: string, overrides?: Partial<ScheduleInput>): Promise<Screenshot> {
+    const body = overrides && Object.keys(overrides).length > 0 ? overrides : undefined;
+    return this.request<Screenshot>('POST', `/schedules/${encodeURIComponent(scheduleId)}/capture`, body);
   }
 
   listScreenshots(scheduleId: string, limit = 10): Promise<Screenshot[]> {

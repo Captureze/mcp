@@ -85,8 +85,8 @@ export function describeSchedule(schedule: Schedule): Record<string, unknown> {
     full_page: schedule.full_page ?? false,
     output_format: schedule.output_format ?? 'png',
     geo: schedule.geo_country ? [schedule.geo_city, schedule.geo_country].filter(Boolean).join(', ') : null,
-    last_capture_at: schedule.last_screenshot_at ?? null,
-    last_diff_percent: schedule.last_diff_percent ?? null,
+    last_capture_at: schedule.latest_screenshot?.created_at ?? null,
+    last_diff_percent: schedule.latest_screenshot?.diff_percent ?? null,
   };
 }
 
@@ -102,6 +102,46 @@ export function describeCapture(screenshot: Screenshot, baseUrl: string): Record
     proxy_tier: screenshot.proxy_tier ?? null,
     session_group: screenshot.session_group ?? null,
   };
+}
+
+/**
+ * A capture that was asked for a country and could not confirm it is not a
+ * success. The message names both countries and keeps the capture reachable —
+ * the file and its certificate are still stored, they simply must not be
+ * reported as something they are not.
+ *
+ * Returns null when there is nothing wrong to report.
+ */
+const GEO_STATUSES_THAT_PASS = new Set(['confirmed', 'not_requested']);
+
+export function geoVerificationFailure(screenshot: Screenshot, baseUrl: string): string | null {
+  const geo = screenshot.geo_verification;
+  if (!geo) return null;
+
+  // `status` is the source of truth and `honoured` only a convenience: a
+  // response carrying status "mismatch" without the boolean must still fail,
+  // or a version skew between this server and the API silently restores the
+  // defect this check exists to catch.
+  const passes = geo.honoured === true || GEO_STATUSES_THAT_PASS.has(geo.status);
+  if (passes && geo.honoured !== false) return null;
+
+  const requested = geo.requested_country ?? 'the requested country';
+  const where =
+    geo.observed_country && geo.observed_country !== geo.requested_country
+      ? `it was served from ${geo.observed_country}`
+      : 'the exit location could not be measured';
+
+  return [
+    `Capture of ${screenshot.url ?? screenshot.file_path ?? `site ${screenshot.schedule_id}`} was requested from ${requested}, but ${where}.`,
+    geo.detail ?? '',
+    '',
+    'The capture and its certificate were kept and are listed below, but this capture does not',
+    `attest to being made from ${requested}.`,
+    '',
+    jsonBlock(describeCapture(screenshot, baseUrl)),
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 }
 
 /** Compact JSON block for lists — cheaper for the model than prose. */

@@ -24,11 +24,36 @@ export interface Schedule {
   hide_selectors?: string[] | null;
   created_at?: string;
   updated_at?: string;
-  /** Present on the list endpoint, which joins the newest capture. */
-  last_screenshot_url?: string | null;
-  last_screenshot_at?: string | null;
-  last_diff_percent?: number | null;
+  /**
+   * The list endpoint (`GET /schedules`) joins the newest capture and the
+   * newest run onto every row. Both are null for a site that has never been
+   * captured, so `latest_screenshot: null` means "never", while a present
+   * object with `diff_percent: null` means "captured once, nothing to diff".
+   * The detail endpoint (`GET /schedules/:id`) returns the bare row and omits
+   * both.
+   */
+  latest_screenshot?: ScheduleLatestScreenshot | null;
+  latest_execution?: ScheduleLatestExecution | null;
   [key: string]: unknown;
+}
+
+export interface ScheduleLatestScreenshot {
+  id: string;
+  file_path?: string | null;
+  file_size?: number | null;
+  diff_percent?: number | null;
+  url?: string | null;
+  thumb_url?: string | null;
+  diff_url?: string | null;
+  created_at?: string | null;
+  proxy_tier?: number | null;
+}
+
+export interface ScheduleLatestExecution {
+  id: string;
+  status?: string | null;
+  error_message?: string | null;
+  created_at?: string | null;
 }
 
 export interface ScheduleInput {
@@ -53,6 +78,12 @@ export interface ScheduleInput {
   dismiss_cookie_banners?: boolean;
   capture_recipe?: string;
   recipe_config?: Record<string, unknown>;
+  /**
+   * Whether the API should take its own first screenshot on creation.
+   * Defaults to true server-side for the dashboard, which relies on it; every
+   * caller in this server captures explicitly and so opts out.
+   */
+  capture_now?: boolean;
   [key: string]: unknown;
 }
 
@@ -74,7 +105,23 @@ export interface Screenshot {
   url?: string | null;
   thumb_url?: string | null;
   diff_url?: string | null;
+  /**
+   * Present on a capture response. Says whether the country the caller asked
+   * for was actually the country the capture came from, measured from the
+   * proxy exit rather than taken from the provider's label.
+   */
+  geo_verification?: GeoVerification | null;
   [key: string]: unknown;
+}
+
+export interface GeoVerification {
+  /** not_requested | confirmed | mismatch | unverified | not_recorded */
+  status: string;
+  requested_country?: string | null;
+  observed_country?: string | null;
+  /** False for both a wrong country and one that could not be measured. */
+  honoured?: boolean;
+  detail?: string;
 }
 
 export interface Execution {

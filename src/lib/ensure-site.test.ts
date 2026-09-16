@@ -46,6 +46,29 @@ describe('ensureSiteForUrl', () => {
     assert.equal(created!.name, 'example.com/pricing');
   });
 
+  // A caller that only creates a site relies on the API's own first screenshot
+  // for its baseline; opting out unconditionally left `monitor` sites with an
+  // empty history and no diff on their first scheduled capture.
+  it('leaves the first screenshot to the API unless the caller captures itself', async () => {
+    let created: Record<string, unknown> | undefined;
+    const client = clientWith([], (body) => {
+      created = body as Record<string, unknown>;
+    });
+
+    await ensureSiteForUrl({ client, url: 'https://example.com' });
+    assert.equal(created!.capture_now, true, 'a site nobody captures needs its baseline');
+  });
+
+  it('opts out of the API first screenshot when the caller captures explicitly', async () => {
+    let created: Record<string, unknown> | undefined;
+    const client = clientWith([], (body) => {
+      created = body as Record<string, unknown>;
+    });
+
+    await ensureSiteForUrl({ client, url: 'https://example.com', captureOnCreate: false });
+    assert.equal(created!.capture_now, false, 'otherwise one request stores two captures');
+  });
+
   it('creates an active site with the requested cron when monitoring', async () => {
     let created: Record<string, unknown> | undefined;
     const client = clientWith([], (body) => {

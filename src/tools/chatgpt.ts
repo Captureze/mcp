@@ -35,10 +35,12 @@ function siteSummary(site: Schedule): string {
   const parts = [
     `Monitored page ${site.url}.`,
     site.is_active ? `Captured on schedule "${site.cron_expression}".` : 'Scheduled capture paused.',
-    site.last_screenshot_at ? `Last capture ${site.last_screenshot_at}.` : 'No captures yet.',
-    site.last_diff_percent === null || site.last_diff_percent === undefined
+    site.latest_screenshot?.created_at
+      ? `Last capture ${site.latest_screenshot.created_at}.`
+      : 'No captures yet.',
+    site.latest_screenshot?.diff_percent === null || site.latest_screenshot?.diff_percent === undefined
       ? ''
-      : `Last change ${Number(site.last_diff_percent).toFixed(2)}%.`,
+      : `Last change ${Number(site.latest_screenshot.diff_percent).toFixed(2)}%.`,
   ];
   return parts.filter(Boolean).join(' ');
 }

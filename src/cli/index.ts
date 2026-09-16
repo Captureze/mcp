@@ -87,6 +87,8 @@ export function buildProgram(): Command {
         client: api,
         url,
         monitor: Boolean(options.monitor),
+        // This command captures explicitly below.
+        captureOnCreate: false,
         ...(typeof options.cron === 'string' ? { cronExpression: options.cron } : {}),
         settings: {
           ...(options.fullPage ? { full_page: true } : {}),
