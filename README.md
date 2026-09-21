@@ -27,8 +27,10 @@ with MCP support.
 https://mcp.captureze.com/mcp
 ```
 
-Authenticate each request with `Authorization: Bearer cap_...`. There is nothing to install and
-nothing to deploy.
+Connector dialogs — ChatGPT's and claude.ai's — sign in over OAuth against your Captureze
+account, so the URL is all you type. Clients that authenticate by header send
+`Authorization: Bearer cap_...` instead. Either way there is nothing to install and nothing to
+deploy.
 
 **Local clients** (Claude Code, Claude Desktop, OpenClaw) — run it over stdio:
 
@@ -70,10 +72,15 @@ claude mcp add -s user --transport http captureze https://mcp.captureze.com/mcp 
 
 ### ChatGPT (custom connector, developer mode)
 
-ChatGPT only talks to **remote** servers. Add a custom connector pointing at
-`https://mcp.captureze.com/mcp` with your API key as an `Authorization: Bearer cap_...` header —
-the server ships the `search` and `fetch` tools ChatGPT requires alongside the `captureze_*` ones.
-See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+ChatGPT only talks to **remote** servers. Turn on developer mode, add a connector pointing at
+`https://mcp.captureze.com/mcp`, pick **OAuth** and press connect: you sign in with the same
+Captureze account you use on the site, and there is no key to paste. The endpoint answers the
+discovery documents on every path ChatGPT probes, so the dialog finds the authorization server
+by itself — the URL is the only thing you type.
+
+An API key still works if you would rather use one (**Access token / API key** →
+`Authorization: Bearer cap_...`). Either way the server ships the `search` and `fetch` tools deep
+research requires alongside the `captureze_*` ones. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ### claude.ai (custom connector)
 
@@ -173,9 +180,30 @@ endpoint stays exactly what it is on an API key, which is what a self-hosted ins
 | `CLERK_SECRET_KEY`         | `sk_live_…` / `sk_test_…`. Verifies access tokens                      |
 | `CAPTUREZE_MCP_PUBLIC_URL` | This endpoint's public origin. Defaults to what the request says it is |
 
-With them set the server publishes `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and
-mirrors the issuer's `/.well-known/oauth-authorization-server` (RFC 8414), and a `401` carries the
-`resource_metadata` pointer that lets a connector find them. API keys keep working unchanged.
+With them set the server publishes RFC 9728 protected resource metadata and mirrors the issuer's
+RFC 8414 authorization server metadata, and a `401` carries the `resource_metadata` pointer that
+lets a connector find them. API keys keep working unchanged.
+
+Connectors disagree about where those documents live, so each is served everywhere one is looked
+for. The spec derives the first of each pair from a resource with a path; the rest are what a
+client asks for when it has no pointer to follow, which is how ChatGPT's connector looks for an
+authorization server:
+
+| Path                                          | Document                                        |
+| --------------------------------------------- | ----------------------------------------------- |
+| `/.well-known/oauth-protected-resource/mcp`   | RFC 9728 — this endpoint, and who issues for it |
+| `/.well-known/oauth-protected-resource`       | the same document, for clients that probe here  |
+| `/.well-known/oauth-authorization-server`     | RFC 8414, mirrored from the issuer              |
+| `/.well-known/oauth-authorization-server/mcp` | the same mirror                                 |
+| `/.well-known/openid-configuration`           | the same mirror                                 |
+| `/.well-known/openid-configuration/mcp`       | the same mirror                                 |
+
+The OpenID paths answer with the OAuth document deliberately: it is the one that carries
+`registration_endpoint`, and a client that asks there is an MCP client following its discovery
+chain, not an OpenID relying party.
+
+An unauthenticated `GET /mcp` is answered with the same `401` and pointer rather than `405`, so a
+connector that probes the endpoint before it knows how to authenticate is not sent to a dead end.
 
 ## Self-hosting the HTTP transport
 

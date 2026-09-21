@@ -8,6 +8,22 @@ import type { OAuthConfig, OAuthProvider, VerifiedToken } from './lib/oauth.ts';
 
 const CONFIG = loadConfig({ CAPTUREZE_BASE_URL: 'https://captureze.com' } as NodeJS.ProcessEnv);
 
+/**
+ * Every path a connector may probe. The spec-derived ones are what the `401`
+ * points at; the rest are what clients ask for when they have no pointer, which
+ * is how ChatGPT's connector looks for an authorization server.
+ */
+const PROTECTED_RESOURCE_PATHS = [
+  '/.well-known/oauth-protected-resource/mcp',
+  '/.well-known/oauth-protected-resource',
+];
+const AUTHORIZATION_SERVER_PATHS = [
+  '/.well-known/oauth-authorization-server',
+  '/.well-known/oauth-authorization-server/mcp',
+  '/.well-known/openid-configuration',
+  '/.well-known/openid-configuration/mcp',
+];
+
 async function withServer(options: Partial<HttpOptions>, run: (base: string) => Promise<void>) {
   const app = createHttpApp({ config: CONFIG, port: 0, host: '127.0.0.1', ...options });
   const server = app.listen(0);
@@ -94,10 +110,10 @@ describe('POST /mcp without OAuth configured', () => {
 
   it('serves no OAuth metadata a self-hosted install would have to explain', async () => {
     await withServer({}, async (base) => {
-      const prm = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`);
-      const as = await fetch(`${base}/.well-known/oauth-authorization-server`);
-      assert.equal(prm.status, 404);
-      assert.equal(as.status, 404);
+      for (const path of [...PROTECTED_RESOURCE_PATHS, ...AUTHORIZATION_SERVER_PATHS]) {
+        const response = await fetch(`${base}${path}`);
+        assert.equal(response.status, 404, `${path} should not exist without OAuth configured`);
+      }
     });
   });
 });
@@ -106,25 +122,46 @@ describe('OAuth discovery', () => {
   it('publishes this endpoint as the protected resource and Clerk as its issuer', async () => {
     const { provider } = fakeOAuth();
     await withServer({ oauth: provider }, async (base) => {
-      const response = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`);
+      // Including on the bare path: a client that probed the fallback is still
+      // talking to /mcp, so that is the resource the document has to name.
+      for (const path of PROTECTED_RESOURCE_PATHS) {
+        const response = await fetch(`${base}${path}`);
 
-      assert.equal(response.status, 200);
-      // Discovery happens from a browser origin the connector controls.
-      assert.equal(response.headers.get('access-control-allow-origin'), '*');
-      const body = (await response.json()) as Record<string, unknown>;
-      assert.equal(body.resource, 'https://mcp.captureze.com/mcp');
-      assert.deepEqual(body.authorization_servers, ['https://clerk.captureze.com']);
+        assert.equal(response.status, 200, path);
+        // Discovery happens from a browser origin the connector controls.
+        assert.equal(response.headers.get('access-control-allow-origin'), '*', path);
+        const body = (await response.json()) as Record<string, unknown>;
+        assert.equal(body.resource, 'https://mcp.captureze.com/mcp', path);
+        assert.deepEqual(body.authorization_servers, ['https://clerk.captureze.com'], path);
+      }
     });
   });
 
-  it('mirrors the authorization server metadata for clients that look here', async () => {
+  // ChatGPT asks this origin for both document names directly and gives up if
+  // neither answers, so every name a connector may try serves the same mirror.
+  it('mirrors the authorization server metadata on every path a client tries', async () => {
     const { provider } = fakeOAuth();
     await withServer({ oauth: provider }, async (base) => {
-      const response = await fetch(`${base}/.well-known/oauth-authorization-server`);
+      for (const path of AUTHORIZATION_SERVER_PATHS) {
+        const response = await fetch(`${base}${path}`);
 
-      assert.equal(response.status, 200);
-      assert.equal(response.headers.get('access-control-allow-origin'), '*');
-      assert.equal(((await response.json()) as { issuer: string }).issuer, 'https://clerk.captureze.com');
+        assert.equal(response.status, 200, path);
+        assert.equal(response.headers.get('access-control-allow-origin'), '*', path);
+        const body = (await response.json()) as { issuer: string };
+        assert.equal(body.issuer, 'https://clerk.captureze.com', path);
+      }
+    });
+  });
+
+  it('answers the CORS preflight a browser-side connector sends first', async () => {
+    const { provider } = fakeOAuth();
+    await withServer({ oauth: provider }, async (base) => {
+      for (const path of [...PROTECTED_RESOURCE_PATHS, ...AUTHORIZATION_SERVER_PATHS]) {
+        const response = await fetch(`${base}${path}`, { method: 'OPTIONS' });
+
+        assert.equal(response.status, 204, path);
+        assert.equal(response.headers.get('access-control-allow-origin'), '*', path);
+      }
     });
   });
 
@@ -141,6 +178,36 @@ describe('OAuth discovery', () => {
         'Bearer realm="captureze", ' +
           'resource_metadata="https://mcp.captureze.com/.well-known/oauth-protected-resource/mcp"',
       );
+    });
+  });
+});
+
+describe('GET /mcp', () => {
+  // A connector that does not know how to authenticate yet probes the endpoint
+  // with a bare GET. A 405 tells it nothing; the 401 carries the pointer.
+  it('challenges an unauthenticated probe instead of answering 405', async () => {
+    const { provider } = fakeOAuth();
+    await withServer({ oauth: provider }, async (base) => {
+      const response = await fetch(`${base}/mcp`);
+
+      assert.equal(response.status, 401);
+      assert.match(
+        response.headers.get('www-authenticate') ?? '',
+        /resource_metadata="https:\/\/mcp\.captureze\.com\/\.well-known\/oauth-protected-resource\/mcp"/,
+      );
+    });
+  });
+
+  it('tells a credentialed caller that the stream half does not exist', async () => {
+    const { provider } = fakeOAuth();
+    await withServer({ oauth: provider }, async (base) => {
+      const response = await fetch(`${base}/mcp`, {
+        headers: { authorization: 'Bearer cap_live_key' },
+      });
+
+      assert.equal(response.status, 405);
+      const body = (await response.json()) as { error: { message: string } };
+      assert.match(body.error.message, /stateless/i);
     });
   });
 });
