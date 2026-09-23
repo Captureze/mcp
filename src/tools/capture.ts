@@ -13,6 +13,7 @@ import {
   toolResult,
 } from '../lib/format.ts';
 import type { Screenshot } from '../lib/types.ts';
+import type { CaptureOutcome } from '../lib/client.ts';
 
 const captureOptions = {
   full_page: z
@@ -36,6 +37,50 @@ const captureOptions = {
   hide_selectors: z.array(z.string().max(500)).max(50).optional(),
   dismiss_cookie_banners: z.boolean().optional(),
 } as const;
+
+const idempotencyKey = z
+  .string()
+  .regex(/^[\x21-\x7e]{1,255}$/)
+  .optional()
+  .describe(
+    'Optional. Any unique string, e.g. a UUID you make up. If this call times out, call again with the same ' +
+      'idempotency_key: you get the original capture back instead of a second, billed one.',
+  );
+
+/**
+ * Takes the capture, and says so when the result is not this request's own:
+ * a capture of the same site that was already running is waited for rather
+ * than started again, which is right for a retried call but may not carry the
+ * options this call asked for. A requested country is the one option checked,
+ * because a capture from the wrong country is the silent failure that matters.
+ */
+async function takeCapture(
+  ctx: ToolContext,
+  siteId: string,
+  settings: Record<string, unknown>,
+  key: string | undefined,
+): Promise<{ outcome: CaptureOutcome; note: string }> {
+  const overrides = Object.keys(settings).length > 0 ? settings : undefined;
+  let outcome = await ctx.client.captureWithOutcome(siteId, overrides, { idempotencyKey: key });
+
+  const wantedCountry = typeof settings.geo_country === 'string' ? settings.geo_country : null;
+  if (outcome.source === 'joined' && wantedCountry) {
+    const got = outcome.screenshot.geo_verification?.requested_country ?? null;
+    if (got !== wantedCountry) {
+      outcome = await ctx.client.captureWithOutcome(siteId, overrides, {
+        idempotencyKey: outcome.idempotencyKey,
+      });
+    }
+  }
+
+  const note =
+    outcome.source === 'joined'
+      ? `A capture of this site was already running (execution ${outcome.executionId}); this is its result rather than a second capture. It used the options it was started with.`
+      : outcome.source === 'replayed'
+        ? `Returned the capture already taken for idempotency_key "${outcome.idempotencyKey}"; nothing was captured or billed again.`
+        : '';
+  return { outcome, note };
+}
 
 /**
  * Turns a stored capture into content the model can actually look at. Large
@@ -87,7 +132,8 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         'geo-restricted pages work. This is the tool for "show me what this page looks like". ' +
         'The URL is stored as a site so later captures can be diffed against this one; a site for the same URL is ' +
         'reused instead of duplicated, and new ones are created paused unless monitor is true. ' +
-        'Takes 10-60 seconds — do not call it repeatedly for the same URL.',
+        'Takes 10-60 seconds — do not call it repeatedly for the same URL. If a call times out, the capture still ' +
+        'finishes: call again with the same idempotency_key to collect it without paying twice.',
       inputSchema: {
         url: z.string().url().describe('Page to capture.'),
         monitor: z
@@ -104,6 +150,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           .boolean()
           .optional()
           .describe('Return the image itself, not just its URL (default true).'),
+        idempotency_key: idempotencyKey,
         ...captureOptions,
       },
       annotations: {
@@ -113,7 +160,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         openWorldHint: true,
       },
     },
-    guard(async ({ url, monitor, cron_expression, include_image, ...settings }) => {
+    guard(async ({ url, monitor, cron_expression, include_image, idempotency_key, ...settings }) => {
       const { schedule, created } = await ensureSiteForUrl({
         client: ctx.client,
         url,
@@ -128,7 +175,8 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       // creation. A site for this URL usually already exists, and settings
       // applied at creation time would otherwise never reach the capture —
       // which is how a request for Germany came back from a US datacenter.
-      const screenshot = await ctx.client.capture(schedule.id, settings);
+      const { outcome, note: sourceNote } = await takeCapture(ctx, schedule.id, settings, idempotency_key);
+      const screenshot = outcome.screenshot;
 
       // A country that was asked for and not confirmed is reported as a
       // failure. The capture is kept — it is still a real capture of the page —
@@ -149,11 +197,13 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         : `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}).`;
 
       return toolResult(
-        `${captureSummary(screenshot, ctx.client.baseUrl, prefix)}\n${note}`,
+        `${captureSummary(screenshot, ctx.client.baseUrl, prefix)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}`,
         {
           ...describeCapture(screenshot, ctx.client.baseUrl),
           site_created: created,
           monitoring: schedule.is_active ?? false,
+          idempotency_key: outcome.idempotencyKey,
+          capture_source: outcome.source,
         },
         blocks,
       );
@@ -170,6 +220,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         include_image: z.boolean().optional().describe('Return the image itself (default true).'),
+        idempotency_key: idempotencyKey,
       },
       annotations: {
         readOnlyHint: false,
@@ -178,8 +229,9 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         openWorldHint: true,
       },
     },
-    guard(async ({ site_id, include_image }) => {
-      const screenshot = await ctx.client.capture(site_id);
+    guard(async ({ site_id, include_image, idempotency_key }) => {
+      const { outcome, note: sourceNote } = await takeCapture(ctx, site_id, {}, idempotency_key);
+      const screenshot = outcome.screenshot;
 
       const geoProblem = geoVerificationFailure(screenshot, ctx.client.baseUrl);
       if (geoProblem) {
@@ -191,8 +243,12 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           ? await imageContent(ctx, screenshot)
           : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
       return toolResult(
-        `${captureSummary(screenshot, ctx.client.baseUrl, `Captured site ${site_id}.`)}\n${note}`,
-        describeCapture(screenshot, ctx.client.baseUrl),
+        `${captureSummary(screenshot, ctx.client.baseUrl, `Captured site ${site_id}.`)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}`,
+        {
+          ...describeCapture(screenshot, ctx.client.baseUrl),
+          idempotency_key: outcome.idempotencyKey,
+          capture_source: outcome.source,
+        },
         blocks,
       );
     }),

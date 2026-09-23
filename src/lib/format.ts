@@ -1,5 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
+import { CaptureStillRunningError, CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
 import type { Schedule, Screenshot } from './types.ts';
 
 /** Successful tool result: a human/model-readable summary plus structured data. */
@@ -19,7 +19,7 @@ export function toolError(error: unknown): CallToolResult {
   let text: string;
   if (error instanceof CapturezeApiError) {
     text = error.toString();
-  } else if (error instanceof CapturezeTimeoutError) {
+  } else if (error instanceof CapturezeTimeoutError || error instanceof CaptureStillRunningError) {
     text = error.message;
   } else if (error instanceof Error) {
     text = `${error.name}: ${error.message}`;

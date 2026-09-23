@@ -1,4 +1,5 @@
-import { CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
+import { randomUUID } from 'node:crypto';
+import { CaptureStillRunningError, CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
 import type { ServerConfig } from './config.ts';
 import type {
   BillingInfo,
@@ -6,6 +7,8 @@ import type {
   ConsentDetectionResponse,
   DiffTrendPoint,
   Execution,
+  ExecutionView,
+  RunningExecution,
   Schedule,
   ScheduleInput,
   Screenshot,
@@ -19,6 +22,29 @@ export interface ClientOptions {
   apiKey: string;
   timeoutMs?: number;
   fetchImpl?: FetchLike;
+  /** Pause between long-polls of a running capture. */
+  pollIntervalMs?: number;
+}
+
+export interface CaptureRequestOptions {
+  /**
+   * Ties retries to one capture: the API answers a repeat of this key with the
+   * original capture instead of taking, and billing, another. Generated when
+   * not given, so a timeout can still name the key to retry with.
+   */
+  idempotencyKey?: string;
+}
+
+export interface CaptureOutcome {
+  screenshot: Screenshot;
+  executionId: string | null;
+  idempotencyKey: string;
+  /**
+   * `own`: this request's capture. `replayed`: an earlier request under the
+   * same key. `joined`: another capture of the site that was already running —
+   * its options may differ from the ones asked for.
+   */
+  source: 'own' | 'replayed' | 'joined';
 }
 
 export interface DownloadedImage {
@@ -46,12 +72,14 @@ export class CapturezeClient {
   private readonly apiKey: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: FetchLike;
+  private readonly pollIntervalMs: number;
 
   constructor(options: ClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.apiKey = options.apiKey;
     this.timeoutMs = options.timeoutMs ?? 180_000;
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
+    this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
   }
 
   static fromConfig(config: ServerConfig, apiKey: string, fetchImpl?: FetchLike): CapturezeClient {
@@ -69,6 +97,21 @@ export class CapturezeClient {
     body?: unknown,
     query?: Record<string, string | number | undefined>,
   ): Promise<T> {
+    return (await this.send<T>(method, path, body, query)).body;
+  }
+
+  /**
+   * One API call. Any status outside 2xx throws, except those listed in
+   * `passStatuses`, which come back with their body for the caller to read.
+   */
+  private async send<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    query?: Record<string, string | number | undefined>,
+    extraHeaders: Record<string, string> = {},
+    passStatuses: number[] = [],
+  ): Promise<{ status: number; body: T }> {
     const url = new URL(`${this.baseUrl}/api${path}`);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -84,6 +127,7 @@ export class CapturezeClient {
           Authorization: `Bearer ${this.apiKey}`,
           Accept: 'application/json',
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...extraHeaders,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
@@ -97,7 +141,7 @@ export class CapturezeClient {
       clearTimeout(timer);
     }
 
-    if (response.status === 204) return undefined as T;
+    if (response.status === 204) return { status: 204, body: undefined as T };
 
     const text = await response.text();
     let parsed: unknown;
@@ -107,19 +151,11 @@ export class CapturezeClient {
       parsed = undefined;
     }
 
-    if (!response.ok) {
-      const payload = (parsed ?? {}) as Record<string, unknown>;
-      const message =
-        typeof payload.error === 'string' ? payload.error : text.slice(0, 300) || `${method} ${path} failed`;
-      throw new CapturezeApiError(
-        response.status,
-        message,
-        typeof payload.code === 'string' ? payload.code : undefined,
-        payload,
-      );
+    if (!response.ok && !passStatuses.includes(response.status)) {
+      throw apiError(response.status, parsed, text.slice(0, 300) || `${method} ${path} failed`);
     }
 
-    return parsed as T;
+    return { status: response.status, body: parsed as T };
   }
 
   // ---- sites (schedules) -------------------------------------------------
@@ -152,9 +188,122 @@ export class CapturezeClient {
    * page from Germany" works on a URL the account already tracks. Omitted when
    * empty so a plain capture keeps using the site's own settings.
    */
-  capture(scheduleId: string, overrides?: Partial<ScheduleInput>): Promise<Screenshot> {
+  async capture(scheduleId: string, overrides?: Partial<ScheduleInput>): Promise<Screenshot> {
+    return (await this.captureWithOutcome(scheduleId, overrides)).screenshot;
+  }
+
+  /**
+   * Starts the capture in async mode and polls it, rather than holding one
+   * request open for up to a minute. Whatever happens to this call, the
+   * capture has an id and a key it can be found by.
+   *
+   * An API that predates async mode ignores `async` and answers 200 with the
+   * capture, which is taken as is.
+   */
+  async captureWithOutcome(
+    scheduleId: string,
+    overrides?: Partial<ScheduleInput>,
+    options: CaptureRequestOptions = {},
+  ): Promise<CaptureOutcome> {
+    const idempotencyKey = options.idempotencyKey ?? randomUUID();
+    const deadline = Date.now() + this.timeoutMs;
     const body = overrides && Object.keys(overrides).length > 0 ? overrides : undefined;
-    return this.request<Screenshot>('POST', `/schedules/${encodeURIComponent(scheduleId)}/capture`, body);
+
+    const started = await this.send<Screenshot | RunningExecution>(
+      'POST',
+      `/schedules/${encodeURIComponent(scheduleId)}/capture`,
+      body,
+      { async: 'true' },
+      { 'Idempotency-Key': idempotencyKey },
+      [409],
+    );
+
+    if (started.status === 409) {
+      const running = started.body as RunningExecution;
+      if (running.code !== 'CAPTURE_IN_PROGRESS' || !running.execution_id) {
+        throw apiError(409, running, 'Capture refused');
+      }
+      const screenshot = await this.waitForCapture(
+        running.execution_id,
+        scheduleId,
+        idempotencyKey,
+        deadline,
+      );
+      return { screenshot, executionId: running.execution_id, idempotencyKey, source: 'joined' };
+    }
+
+    if (started.status === 202) {
+      const running = started.body as RunningExecution;
+      const screenshot = await this.waitForCapture(
+        running.execution_id,
+        scheduleId,
+        idempotencyKey,
+        deadline,
+      );
+      return { screenshot, executionId: running.execution_id, idempotencyKey, source: 'own' };
+    }
+
+    // 200: the capture itself — replayed under this key, or from an API
+    // without async mode.
+    return {
+      screenshot: started.body as Screenshot,
+      executionId: null,
+      idempotencyKey,
+      source: options.idempotencyKey ? 'replayed' : 'own',
+    };
+  }
+
+  /**
+   * `waitSeconds` long-polls: the API holds the request until the execution
+   * finishes or the wait runs out (it caps it at 25). Each poll counts against
+   * the hourly rate limit, so a capture should cost a request or two, not one
+   * every couple of seconds.
+   */
+  getExecution(executionId: string, waitSeconds = 0): Promise<ExecutionView> {
+    return this.request<ExecutionView>(
+      'GET',
+      `/executions/${encodeURIComponent(executionId)}`,
+      undefined,
+      waitSeconds > 0 ? { wait: waitSeconds } : undefined,
+    );
+  }
+
+  /**
+   * Polls a running capture until it finishes, then returns — or throws —
+   * exactly what the capture request would have.
+   */
+  private async waitForCapture(
+    executionId: string,
+    scheduleId: string,
+    idempotencyKey: string,
+    deadline: number,
+  ): Promise<Screenshot> {
+    for (;;) {
+      const remainingSeconds = Math.floor((deadline - Date.now()) / 1000);
+      const execution = await this.getExecution(executionId, Math.min(25, Math.max(remainingSeconds - 1, 0)));
+      if (execution.status !== 'running') {
+        const response = execution.response;
+        if (!response) {
+          throw new CapturezeApiError(
+            502,
+            execution.error ?? `Capture ${executionId} finished without a result.`,
+            undefined,
+            execution as unknown as Record<string, unknown>,
+          );
+        }
+        if (response.status >= 200 && response.status < 300) return response.body as Screenshot;
+        throw apiError(response.status, response.body, `Capture ${executionId} failed`);
+      }
+      if (Date.now() + this.pollIntervalMs > deadline) {
+        throw new CaptureStillRunningError({
+          timeoutMs: this.timeoutMs,
+          executionId,
+          scheduleId,
+          idempotencyKey,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
+    }
   }
 
   listScreenshots(scheduleId: string, limit = 10): Promise<Screenshot[]> {
@@ -281,4 +430,14 @@ export class CapturezeClient {
       url: absolute.toString(),
     };
   }
+}
+
+function apiError(status: number, parsed: unknown, fallback: string): CapturezeApiError {
+  const payload = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+  return new CapturezeApiError(
+    status,
+    typeof payload.error === 'string' ? payload.error : fallback,
+    typeof payload.code === 'string' ? payload.code : undefined,
+    payload,
+  );
 }

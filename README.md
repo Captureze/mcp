@@ -114,7 +114,7 @@ stdio locally, `https://your-host/mcp` remotely. Details for each in
 | `captureze_list_capture_runs`                                         | Execution log — why a scheduled capture failed                                 |
 | `captureze_compare_captures`                                          | Pixel-diff any two captures (Pro)                                              |
 | `captureze_diff_trend`                                                | How much a page has been moving (Pro)                                          |
-| `captureze_get_capture_certificate`                                   | Certificate of Capture for evidence (Starter+)                                 |
+| `captureze_get_capture_certificate`                                   | Certificate of Capture for evidence, with its RFC 3161 timestamp (Starter+)    |
 | `captureze_detect_consent_banner` / `captureze_get_consent_detection` | Find the cookie banner and its selectors                                       |
 | `captureze_account_status`                                            | Plan, entitlements, usage against limits                                       |
 | `search` / `fetch`                                                    | ChatGPT-compatible views over the same data                                    |
@@ -128,6 +128,16 @@ Every capture belongs to a _site_, which is what gives it history, diffs and cer
 `captureze_capture_url` files its capture under a site for that URL: an existing one if the
 account already has it, otherwise a new one created **paused** (`is_active: false`), which
 captures on request and never on its own. Pass `monitor: true` to have it run on a schedule too.
+
+### Timeouts and retries
+
+A capture takes 10-60 seconds and is billed. The server starts it in async mode and polls it, so no
+request is held open for the whole capture, and every capture carries an idempotency key. Pass your own
+as `idempotency_key` to `captureze_capture_url` or `captureze_capture_site`. If the call times out, the
+capture still finishes on the server: call again with the same key and you get that capture back,
+without a second charge. When the MCP server itself runs out of time, its error names the key to retry
+with. Only one on-demand capture of a site runs at a time. A call made while one is running waits for
+that one and says so, instead of starting a second.
 
 ## CLI
 

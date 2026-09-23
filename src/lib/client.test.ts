@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { CapturezeClient } from './client.ts';
-import { CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
+import { CaptureStillRunningError, CapturezeApiError, CapturezeTimeoutError } from './errors.ts';
 
 interface Call {
   url: string;
@@ -113,5 +113,126 @@ describe('CapturezeClient', () => {
 
     const image = await client.downloadImage('/screenshots/a/b.jpeg');
     assert.equal(image.mimeType, 'image/jpeg');
+  });
+
+  describe('captures that outlive a request', () => {
+    const EXECUTION = '33333333-3333-4333-8333-333333333333';
+    const SHOT = { id: 'shot-1', file_path: 'site/shot.png' };
+
+    // Answers the capture POST, then each poll, from a script of responses.
+    function scripted(post: Response, polls: unknown[]) {
+      let poll = 0;
+      return stubFetch(({ url, init }) => {
+        if (init?.method === 'POST') return post;
+        if (url.includes(`/api/executions/${EXECUTION}`)) {
+          const next = polls[Math.min(poll, polls.length - 1)];
+          poll++;
+          return json(next);
+        }
+        return json({ error: `unexpected ${url}` }, 500);
+      });
+    }
+
+    const client = (fetchImpl: ReturnType<typeof stubFetch>['fetchImpl'], timeoutMs = 5_000) =>
+      new CapturezeClient({
+        baseUrl: 'https://captureze.com',
+        apiKey: 'cap_test',
+        fetchImpl,
+        timeoutMs,
+        pollIntervalMs: 1,
+      });
+
+    it('starts the capture in async mode under an idempotency key and polls it to the end', async () => {
+      const { calls, fetchImpl } = scripted(json({ execution_id: EXECUTION, status: 'running' }, 202), [
+        { execution_id: EXECUTION, status: 'running' },
+        { execution_id: EXECUTION, status: 'success', response: { status: 200, body: SHOT } },
+      ]);
+
+      const outcome = await client(fetchImpl).captureWithOutcome('site-1', undefined, {
+        idempotencyKey: 'key-1',
+      });
+
+      assert.deepEqual(outcome.screenshot, SHOT);
+      assert.equal(outcome.source, 'own');
+      assert.equal(outcome.executionId, EXECUTION);
+      assert.equal(calls[0]!.url, 'https://captureze.com/api/schedules/site-1/capture?async=true');
+      assert.equal((calls[0]!.init!.headers as Record<string, string>)['Idempotency-Key'], 'key-1');
+      const polls = calls.filter((call) => call.url.includes(`/executions/${EXECUTION}`));
+      assert.equal(polls.length, 2);
+      // Long-polls, so the capture costs a request or two against the rate limit.
+      assert.match(polls[0]!.url, /\?wait=\d+$/);
+    });
+
+    it('generates a key when none is given, so a timeout can still name one', async () => {
+      const { calls, fetchImpl } = scripted(json(SHOT), []);
+      const outcome = await client(fetchImpl).captureWithOutcome('site-1');
+      const sent = (calls[0]!.init!.headers as Record<string, string>)['Idempotency-Key'];
+      assert.match(sent!, /^[0-9a-f-]{36}$/);
+      assert.equal(outcome.idempotencyKey, sent);
+    });
+
+    it('takes a 200 as the capture itself: a replay, or an API without async mode', async () => {
+      const { fetchImpl } = scripted(json(SHOT), []);
+      assert.deepEqual(await client(fetchImpl).capture('site-1'), SHOT);
+
+      const replay = await client(scripted(json(SHOT), []).fetchImpl).captureWithOutcome(
+        'site-1',
+        undefined,
+        {
+          idempotencyKey: 'key-1',
+        },
+      );
+      assert.equal(replay.source, 'replayed');
+    });
+
+    it('waits for a capture already running on the site instead of starting a second one', async () => {
+      const { calls, fetchImpl } = scripted(
+        json({ error: 'already running', code: 'CAPTURE_IN_PROGRESS', execution_id: EXECUTION }, 409),
+        [{ execution_id: EXECUTION, status: 'success', response: { status: 200, body: SHOT } }],
+      );
+
+      const outcome = await client(fetchImpl).captureWithOutcome('site-1');
+
+      assert.equal(outcome.source, 'joined');
+      assert.deepEqual(outcome.screenshot, SHOT);
+      assert.equal(calls.filter((call) => call.init?.method === 'POST').length, 1);
+    });
+
+    it('fails with the error the capture itself failed with', async () => {
+      const { fetchImpl } = scripted(json({ execution_id: EXECUTION, status: 'running' }, 202), [
+        {
+          execution_id: EXECUTION,
+          status: 'failed',
+          response: { status: 502, body: { error: 'Target blocked the capture', code: 'TARGET_BLOCKED' } },
+        },
+      ]);
+
+      await assert.rejects(
+        () => client(fetchImpl).capture('site-1'),
+        (error: unknown) => {
+          assert.ok(error instanceof CapturezeApiError);
+          assert.equal(error.status, 502);
+          assert.equal(error.code, 'TARGET_BLOCKED');
+          return true;
+        },
+      );
+    });
+
+    it('when time runs out, says the capture is still coming and which key collects it', async () => {
+      const { fetchImpl } = scripted(json({ execution_id: EXECUTION, status: 'running' }, 202), [
+        { execution_id: EXECUTION, status: 'running' },
+      ]);
+
+      await assert.rejects(
+        () => client(fetchImpl, 30).captureWithOutcome('site-1', undefined, { idempotencyKey: 'key-9' }),
+        (error: unknown) => {
+          assert.ok(error instanceof CaptureStillRunningError);
+          assert.equal(error.executionId, EXECUTION);
+          assert.match(error.message, /idempotency_key "key-9"/);
+          assert.match(error.message, /billed once/);
+          return true;
+        },
+      );
+    });
   });
 });
