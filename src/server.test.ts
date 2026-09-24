@@ -534,4 +534,36 @@ describe('captureze MCP server', () => {
       assert.equal((result.structuredContent as Record<string, unknown>).capture_id, 'own-capture');
     });
   });
+
+  // Reddit: monitoring a URL first captured ad hoc used to create a second
+  // site (monitor_site) or leave the first paused (capture_url, monitor: true).
+  it('monitoring a URL captured ad hoc resumes that site instead of duplicating it', async () => {
+    const paused = { ...SITE, is_active: false, cron_expression: '0 3 * * *' };
+    const api = fakeApi({ sites: [paused] });
+    const updates: Record<string, unknown>[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (init?.method === 'PUT' && url.endsWith(`/api/schedules/${SITE.id}`)) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        updates.push(body);
+        return new Response(JSON.stringify({ ...paused, ...body }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return api.fetchImpl(url, init);
+    };
+    const { client } = await connect(fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_monitor_site',
+      arguments: { url: 'https://example.com', cron_expression: '0 9 * * *' },
+    });
+
+    assert.ok(
+      !api.requests.includes('POST https://captureze.com/api/schedules'),
+      'no second site for the same URL',
+    );
+    assert.deepEqual(updates, [{ is_active: true, cron_expression: '0 9 * * *' }]);
+    const [block] = result.content as { type: string; text: string }[];
+    assert.match(block!.text, /Now monitoring .* capture history kept/);
+  });
 });

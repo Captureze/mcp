@@ -157,6 +157,8 @@ export interface ExecutionView {
   error?: string | null;
   /** What the capture request returned; absent while running. */
   response?: { status: number; body: unknown } | null;
+  /** Succeeded, but its capture has been deleted since. */
+  capture_gone?: boolean;
   [key: string]: unknown;
 }
 
@@ -193,6 +195,8 @@ export interface CaptureCertificate {
   created_at?: string;
   /** RFC 3161 timestamp from an outside authority; null when the certificate has none. */
   timestamp?: CertificateTimestamp | null;
+  /** 'present', 'pending' (still being obtained, moments after capture) or 'none'. */
+  timestamp_status?: 'present' | 'pending' | 'none';
   [key: string]: unknown;
 }
 

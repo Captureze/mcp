@@ -283,6 +283,14 @@ export class CapturezeClient {
       const execution = await this.getExecution(executionId, Math.min(25, Math.max(remainingSeconds - 1, 0)));
       if (execution.status !== 'running') {
         const response = execution.response;
+        if (!response && execution.capture_gone) {
+          throw new CapturezeApiError(
+            410,
+            `Capture ${executionId} succeeded, but the capture has since been deleted.`,
+            'CAPTURE_GONE',
+            execution as unknown as Record<string, unknown>,
+          );
+        }
         if (!response) {
           throw new CapturezeApiError(
             502,

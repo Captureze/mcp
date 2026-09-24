@@ -131,7 +131,9 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         "of the same URL. Captures run through Captureze's residential/datacenter proxy pool, so bot-protected and " +
         'geo-restricted pages work. This is the tool for "show me what this page looks like". ' +
         'The URL is stored as a site so later captures can be diffed against this one; a site for the same URL is ' +
-        'reused instead of duplicated, and new ones are created paused unless monitor is true. ' +
+        'reused instead of duplicated, and new ones are created paused unless monitor is true. monitor: true also ' +
+        'resumes an existing paused site for the URL and moves it to cron_expression; without it, an existing ' +
+        'site is left exactly as it is. ' +
         'Takes 10-60 seconds — do not call it repeatedly for the same URL. If a call times out, the capture still ' +
         'finishes: call again with the same idempotency_key to collect it without paying twice.',
       inputSchema: {
@@ -161,7 +163,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       },
     },
     guard(async ({ url, monitor, cron_expression, include_image, idempotency_key, ...settings }) => {
-      const { schedule, created } = await ensureSiteForUrl({
+      const { schedule, created, changed } = await ensureSiteForUrl({
         client: ctx.client,
         url,
         settings,
@@ -194,13 +196,16 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
 
       const prefix = created
         ? `Captured ${url} (new site "${schedule.name}", id ${schedule.id}, ${monitor ? `monitoring on "${schedule.cron_expression}"` : 'paused — no scheduled captures'}).`
-        : `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}).`;
+        : changed.length > 0
+          ? `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}; for monitor: ${changed.join('; ')} — monitoring on "${schedule.cron_expression}").`
+          : `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}, ${schedule.is_active ? `monitoring on "${schedule.cron_expression}"` : 'paused — no scheduled captures'}).`;
 
       return toolResult(
         `${captureSummary(screenshot, ctx.client.baseUrl, prefix)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}`,
         {
           ...describeCapture(screenshot, ctx.client.baseUrl),
           site_created: created,
+          site_changes: changed,
           monitoring: schedule.is_active ?? false,
           idempotency_key: outcome.idempotencyKey,
           capture_source: outcome.source,

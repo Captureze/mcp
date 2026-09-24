@@ -26,7 +26,9 @@ export function registerEvidenceTools(server: McpServer, ctx: ToolContext): void
       const stamp = certificate.timestamp;
       const timestampLine = stamp
         ? `Independently timestamped (${stamp.standard}) by ${stamp.authority} at ${stamp.time}; token: ${stamp.token_url}.`
-        : 'No independent timestamp: the capture time is recorded by Captureze only.';
+        : certificate.timestamp_status === 'pending'
+          ? 'Independent timestamp pending: it is still being obtained — ask again in a minute.'
+          : 'No independent timestamp: the capture time is recorded by Captureze only.';
       return toolResult(
         `Certificate ${certificate.certificate_id} for ${certificate.page_url}, captured ${certificate.captured_at}. ` +
           `${timestampLine} Verify at ${certificate.verify_url}.\n\n${jsonBlock(certificate)}`,
