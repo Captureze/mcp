@@ -70,7 +70,7 @@ function fakeApi({
     requests.push(`${method} ${url}`);
     // Matched precisely: the base URL "https://captureze.com" itself contains
     // the substring "/capture", so a loose includes() records every request.
-    if (method === 'POST' && /\/schedules\/[^/]+\/capture$/.test(url)) {
+    if (method === 'POST' && /\/schedules\/[^/]+\/capture(\?|$)/.test(url)) {
       captureBodies.push(init?.body ? JSON.parse(String(init.body)) : {});
     }
     const json = (body: unknown, status = 200) =>
@@ -437,5 +437,169 @@ describe('captureze MCP server', () => {
     const content = result.content as Array<{ type: string; text: string }>;
 
     assert.equal(content[0]!.text.split('\n')[0], 'Plan: unknown');
+  });
+
+  describe('timeouts and retries', () => {
+    const EXECUTION = '33333333-3333-4333-8333-333333333333';
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+    it('sends the idempotency key it was given, so a retried call collects the original capture', async () => {
+      const api = fakeApi({ sites: [SITE] });
+      const keys: (string | undefined)[] = [];
+      const fetchImpl: FetchLike = async (url, init) => {
+        if (url.includes('/capture') && init?.method === 'POST') {
+          keys.push((init.headers as Record<string, string>)['Idempotency-Key']);
+        }
+        return api.fetchImpl(url, init);
+      };
+      const { client } = await connect(fetchImpl);
+
+      const result = await client.callTool({
+        name: 'captureze_capture_url',
+        arguments: { url: 'https://example.com', include_image: false, idempotency_key: 'retry-me' },
+      });
+
+      assert.deepEqual(keys, ['retry-me']);
+      const [block] = result.content as { type: string; text: string }[];
+      assert.match(block!.text, /nothing was captured or billed again/);
+      assert.equal((result.structuredContent as Record<string, unknown>).idempotency_key, 'retry-me');
+    });
+
+    it('a capture already running is waited for and named, not silently passed off as this one', async () => {
+      const api = fakeApi({ sites: [SITE] });
+      const fetchImpl: FetchLike = async (url, init) => {
+        if (url.includes('/capture') && init?.method === 'POST') {
+          return json({ error: 'running', code: 'CAPTURE_IN_PROGRESS', execution_id: EXECUTION }, 409);
+        }
+        if (url.includes(`/api/executions/${EXECUTION}`)) {
+          return json({
+            execution_id: EXECUTION,
+            status: 'success',
+            response: { status: 200, body: CAPTURE },
+          });
+        }
+        return api.fetchImpl(url, init);
+      };
+      const { client } = await connect(fetchImpl);
+
+      const result = await client.callTool({
+        name: 'captureze_capture_site',
+        arguments: { site_id: SITE.id, include_image: false },
+      });
+
+      assert.equal(result.isError, undefined);
+      const [block] = result.content as { type: string; text: string }[];
+      assert.match(block!.text, /already running/);
+      assert.match(block!.text, new RegExp(EXECUTION));
+    });
+
+    it('does not hand back a running capture from another country as the one asked for', async () => {
+      const api = fakeApi({ sites: [SITE] });
+      let posts = 0;
+      const fetchImpl: FetchLike = async (url, init) => {
+        if (url.includes('/capture') && init?.method === 'POST') {
+          posts++;
+          if (posts === 1)
+            return json({ error: 'running', code: 'CAPTURE_IN_PROGRESS', execution_id: EXECUTION }, 409);
+          return json({
+            ...CAPTURE,
+            id: 'own-capture',
+            geo_verification: {
+              status: 'confirmed',
+              requested_country: 'DE',
+              observed_country: 'DE',
+              honoured: true,
+            },
+          });
+        }
+        if (url.includes(`/api/executions/${EXECUTION}`)) {
+          // The capture that was running had no country at all.
+          return json({
+            execution_id: EXECUTION,
+            status: 'success',
+            response: { status: 200, body: CAPTURE },
+          });
+        }
+        return api.fetchImpl(url, init);
+      };
+      const { client } = await connect(fetchImpl);
+
+      const result = await client.callTool({
+        name: 'captureze_capture_url',
+        arguments: { url: 'https://example.com', geo_country: 'DE', include_image: false },
+      });
+
+      assert.equal(posts, 2, 'the running capture is waited out, then this one is taken');
+      assert.equal((result.structuredContent as Record<string, unknown>).capture_id, 'own-capture');
+    });
+  });
+
+  // Reddit: monitoring a URL first captured ad hoc used to create a second
+  // site (monitor_site) or leave the first paused (capture_url, monitor: true).
+  it('monitoring a URL captured ad hoc resumes that site instead of duplicating it', async () => {
+    const paused = { ...SITE, is_active: false, cron_expression: '0 3 * * *' };
+    const api = fakeApi({ sites: [paused] });
+    const updates: Record<string, unknown>[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (init?.method === 'PUT' && url.endsWith(`/api/schedules/${SITE.id}`)) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        updates.push(body);
+        return new Response(JSON.stringify({ ...paused, ...body }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return api.fetchImpl(url, init);
+    };
+    const { client } = await connect(fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_monitor_site',
+      arguments: { url: 'https://example.com', cron_expression: '0 9 * * *' },
+    });
+
+    assert.ok(
+      !api.requests.includes('POST https://captureze.com/api/schedules'),
+      'no second site for the same URL',
+    );
+    assert.deepEqual(updates, [{ is_active: true, cron_expression: '0 9 * * *' }]);
+    const [block] = result.content as { type: string; text: string }[];
+    assert.match(block!.text, /Now monitoring .* capture history kept/);
+  });
+
+  // The Reddit report itself: capture_url with monitor: true on a URL an
+  // earlier ad-hoc capture stored paused.
+  it('capture_url with monitor: true resumes the paused site it reuses, and says so', async () => {
+    const paused = { ...SITE, is_active: false, cron_expression: '0 3 * * *' };
+    const api = fakeApi({ sites: [paused] });
+    const updates: Record<string, unknown>[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (init?.method === 'PUT' && url.endsWith(`/api/schedules/${SITE.id}`)) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        updates.push(body);
+        return new Response(JSON.stringify({ ...paused, ...body }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return api.fetchImpl(url, init);
+    };
+    const { client } = await connect(fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: {
+        url: 'https://example.com',
+        monitor: true,
+        cron_expression: '0 9 * * *',
+        include_image: false,
+      },
+    });
+
+    assert.deepEqual(updates, [{ is_active: true, cron_expression: '0 9 * * *' }]);
+    const structured = result.structuredContent as Record<string, unknown>;
+    assert.equal(structured.monitoring, true);
+    const [block] = result.content as { type: string; text: string }[];
+    assert.match(block!.text, /resumed \(it was paused\)/);
+    assert.match(block!.text, /monitoring on "0 9 \* \* \*"/);
   });
 });

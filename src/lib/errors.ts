@@ -58,3 +58,36 @@ export class CapturezeTimeoutError extends Error {
     this.name = 'CapturezeTimeoutError';
   }
 }
+
+/**
+ * The capture outlived this call but was not lost: it runs to completion on
+ * the server and is stored. Says how to collect it without paying twice.
+ */
+export class CaptureStillRunningError extends Error {
+  readonly executionId: string;
+  readonly scheduleId: string;
+  readonly idempotencyKey: string;
+
+  constructor({
+    timeoutMs,
+    executionId,
+    scheduleId,
+    idempotencyKey,
+  }: {
+    timeoutMs: number;
+    executionId: string;
+    scheduleId: string;
+    idempotencyKey: string;
+  }) {
+    super(
+      `The capture is still running after ${Math.round(timeoutMs / 1000)}s (execution ${executionId}, site ${scheduleId}). ` +
+        'It will finish and be stored, and it is billed once. To get its result, call the same tool again with ' +
+        `idempotency_key "${idempotencyKey}" — that returns this capture instead of taking a second one — ` +
+        'or look it up with captureze_list_capture_runs. Do not retry without the key.',
+    );
+    this.name = 'CaptureStillRunningError';
+    this.executionId = executionId;
+    this.scheduleId = scheduleId;
+    this.idempotencyKey = idempotencyKey;
+  }
+}

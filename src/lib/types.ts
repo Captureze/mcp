@@ -136,6 +136,32 @@ export interface Execution {
   [key: string]: unknown;
 }
 
+/** A capture that has started and not finished: 202, or 409 CAPTURE_IN_PROGRESS. */
+export interface RunningExecution {
+  execution_id: string;
+  schedule_id?: string;
+  status?: string;
+  started_at?: string;
+  poll_url?: string;
+  code?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+/** GET /api/executions/:id */
+export interface ExecutionView {
+  execution_id: string;
+  schedule_id: string;
+  status: string;
+  capture_id?: string | null;
+  error?: string | null;
+  /** What the capture request returned; absent while running. */
+  response?: { status: number; body: unknown } | null;
+  /** Succeeded, but its capture has been deleted since. */
+  capture_gone?: boolean;
+  [key: string]: unknown;
+}
+
 export interface ScreenshotComparison {
   diffPercent?: number;
   diff_percent?: number;
@@ -167,7 +193,19 @@ export interface CaptureCertificate {
   has_pdf?: boolean;
   verify_url?: string;
   created_at?: string;
+  /** RFC 3161 timestamp from an outside authority; null when the certificate has none. */
+  timestamp?: CertificateTimestamp | null;
+  /** 'present', 'pending' (still being obtained, moments after capture) or 'none'. */
+  timestamp_status?: 'present' | 'pending' | 'none';
   [key: string]: unknown;
+}
+
+export interface CertificateTimestamp {
+  standard: string;
+  authority: string;
+  time: string;
+  serial: string;
+  token_url: string;
 }
 
 export interface ConsentDetectionResponse {

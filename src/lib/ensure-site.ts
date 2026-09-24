@@ -17,6 +17,12 @@ export const ADHOC_CRON = '0 3 * * *';
 export interface EnsureSiteResult {
   schedule: Schedule;
   created: boolean;
+  /**
+   * What was changed on an existing site to honour `monitor: true`: empty when
+   * nothing needed to change. Reported so a reused site is never silently left
+   * paused, or on a schedule other than the one asked for.
+   */
+  changed: string[];
 }
 
 export interface EnsureSiteOptions {
@@ -35,6 +41,13 @@ export interface EnsureSiteOptions {
    * scheduled capture against.
    */
   captureOnCreate?: boolean;
+  /**
+   * With `monitor`, also apply `settings` and `name` to an existing site. For
+   * "monitor this page with these settings". Off for a capture, whose options
+   * belong to that one capture and must not change a site the user may be
+   * monitoring on its own terms.
+   */
+  applySettingsToExisting?: boolean;
 }
 
 export async function ensureSiteForUrl({
@@ -45,10 +58,12 @@ export async function ensureSiteForUrl({
   cronExpression,
   name,
   captureOnCreate = true,
+  applySettingsToExisting = false,
 }: EnsureSiteOptions): Promise<EnsureSiteResult> {
   const existing = await client.listSchedules();
   const match = existing.find((schedule) => sameTarget(schedule.url, url));
-  if (match) return { schedule: match, created: false };
+  if (match)
+    return reuseSite(client, match, { monitor, cronExpression, name, settings, applySettingsToExisting });
 
   const schedule = await client.createSchedule({
     name: name ?? siteLabel(url),
@@ -66,5 +81,57 @@ export async function ensureSiteForUrl({
     capture_now: captureOnCreate,
   } as ScheduleInput);
 
-  return { schedule, created: true };
+  return { schedule, created: true, changed: [] };
+}
+
+/**
+ * An existing site for the URL is reused rather than duplicated — but a request
+ * to monitor it is honoured, not dropped. The site may have been created
+ * paused by an earlier ad-hoc capture; `monitor: true` must turn it on.
+ *
+ * Without `monitor`, the site is left exactly as it is: a one-off capture never
+ * pauses, reschedules or reconfigures a site someone is monitoring.
+ */
+async function reuseSite(
+  client: CapturezeClient,
+  site: Schedule,
+  {
+    monitor,
+    cronExpression,
+    name,
+    settings,
+    applySettingsToExisting,
+  }: {
+    monitor: boolean;
+    cronExpression?: string;
+    name?: string;
+    settings: Partial<ScheduleInput>;
+    applySettingsToExisting: boolean;
+  },
+): Promise<EnsureSiteResult> {
+  if (!monitor) return { schedule: site, created: false, changed: [] };
+
+  const update: Partial<ScheduleInput> = {};
+  const changed: string[] = [];
+  if (!site.is_active) {
+    update.is_active = true;
+    changed.push('resumed (it was paused)');
+  }
+  if (cronExpression && cronExpression !== site.cron_expression) {
+    update.cron_expression = cronExpression;
+    changed.push(`schedule "${site.cron_expression}" -> "${cronExpression}"`);
+  }
+  if (applySettingsToExisting) {
+    const extra = { ...settings, ...(name ? { name } : {}) } as Record<string, unknown>;
+    const current = site as unknown as Record<string, unknown>;
+    const differing = Object.keys(extra).filter(
+      (key) => extra[key] !== undefined && JSON.stringify(extra[key]) !== JSON.stringify(current[key]),
+    );
+    for (const key of differing) (update as Record<string, unknown>)[key] = extra[key];
+    if (differing.length > 0) changed.push(`updated ${differing.join(', ')}`);
+  }
+
+  if (changed.length === 0) return { schedule: site, created: false, changed };
+  const schedule = await client.updateSchedule(site.id, update);
+  return { schedule, created: false, changed };
 }

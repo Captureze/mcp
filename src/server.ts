@@ -25,8 +25,9 @@ Pick the tool by what the user is after:
 - "prove what it looked like" (legal, GDPR, ad compliance) -> captureze_get_capture_certificate
 - cookie banner work -> captureze_detect_consent_banner
 
-Captures take 10-60 seconds and cost the account a capture credit: never loop on the same URL. Plan limits
-come back as errors that say what to upgrade — report them to the user instead of retrying.`;
+Captures take 10-60 seconds and cost the account a capture credit: never loop on the same URL. A capture
+whose call timed out still finishes: call again with the same idempotency_key to collect it without paying
+twice. Plan limits come back as errors that say what to upgrade — report them to the user instead of retrying.`;
 
 export interface CreateServerOptions {
   config: ServerConfig;

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './context.ts';
 import { describeSchedule, guard, jsonBlock, toolResult } from '../lib/format.ts';
-import { siteLabel } from '../lib/url.ts';
+import { ensureSiteForUrl } from '../lib/ensure-site.ts';
+import type { ScheduleInput } from '../lib/types.ts';
 
 /**
  * A "site" in agent language is a `schedule` in the REST API: a URL plus the
@@ -106,7 +107,9 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         'Creates a site that Captureze re-captures on a cron schedule and diffs against the previous capture. ' +
         'Use this when the user wants ongoing tracking ("watch this page", "tell me when it changes"). ' +
         'For a single screenshot right now, use captureze_capture_url instead. ' +
-        "Counts against the account's site limit.",
+        'If the account already has a site for this URL — for example one an earlier captureze_capture_url created ' +
+        'paused — that site is resumed and updated instead of duplicated, keeping its capture history. ' +
+        "A new site counts against the account's site limit.",
       inputSchema: {
         url: z.string().url().describe('Page to monitor.'),
         cron_expression: z
@@ -142,17 +145,26 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         openWorldHint: true,
       },
     },
-    guard(async ({ url, name, ...rest }) => {
-      const schedule = await ctx.client.createSchedule({
-        name: name ?? siteLabel(url),
+    guard(async ({ url, name, cron_expression, ...rest }) => {
+      const { schedule, created, changed } = await ensureSiteForUrl({
+        client: ctx.client,
         url,
-        is_active: true,
-        ...rest,
-      } as never);
-      return toolResult(
-        `Now monitoring ${schedule.url} on "${schedule.cron_expression}" (site id ${schedule.id}).`,
-        { site: describeSchedule(schedule) },
-      );
+        monitor: true,
+        cronExpression: cron_expression,
+        ...(name ? { name } : {}),
+        settings: rest as Partial<ScheduleInput>,
+        applySettingsToExisting: true,
+      });
+      const summary = created
+        ? `Now monitoring ${schedule.url} on "${schedule.cron_expression}" (new site, id ${schedule.id}).`
+        : changed.length > 0
+          ? `Now monitoring ${schedule.url} on "${schedule.cron_expression}" (existing site ${schedule.id}, capture history kept: ${changed.join('; ')}).`
+          : `Already monitoring ${schedule.url} on "${schedule.cron_expression}" (site ${schedule.id}); nothing to change.`;
+      return toolResult(summary, {
+        site: describeSchedule(schedule),
+        site_created: created,
+        site_changes: changed,
+      });
     }),
   );
 
