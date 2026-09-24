@@ -566,4 +566,40 @@ describe('captureze MCP server', () => {
     const [block] = result.content as { type: string; text: string }[];
     assert.match(block!.text, /Now monitoring .* capture history kept/);
   });
+
+  // The Reddit report itself: capture_url with monitor: true on a URL an
+  // earlier ad-hoc capture stored paused.
+  it('capture_url with monitor: true resumes the paused site it reuses, and says so', async () => {
+    const paused = { ...SITE, is_active: false, cron_expression: '0 3 * * *' };
+    const api = fakeApi({ sites: [paused] });
+    const updates: Record<string, unknown>[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (init?.method === 'PUT' && url.endsWith(`/api/schedules/${SITE.id}`)) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        updates.push(body);
+        return new Response(JSON.stringify({ ...paused, ...body }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return api.fetchImpl(url, init);
+    };
+    const { client } = await connect(fetchImpl);
+
+    const result = await client.callTool({
+      name: 'captureze_capture_url',
+      arguments: {
+        url: 'https://example.com',
+        monitor: true,
+        cron_expression: '0 9 * * *',
+        include_image: false,
+      },
+    });
+
+    assert.deepEqual(updates, [{ is_active: true, cron_expression: '0 9 * * *' }]);
+    const structured = result.structuredContent as Record<string, unknown>;
+    assert.equal(structured.monitoring, true);
+    const [block] = result.content as { type: string; text: string }[];
+    assert.match(block!.text, /resumed \(it was paused\)/);
+    assert.match(block!.text, /monitoring on "0 9 \* \* \*"/);
+  });
 });
