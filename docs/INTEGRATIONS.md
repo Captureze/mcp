@@ -2,8 +2,9 @@
 
 One server, two transports:
 
-- **Streamable HTTP** (`POST /mcp`) — the client calls a URL and sends its own
-  `Authorization: Bearer cap_...` per request. Use it for hosted clients (ChatGPT, claude.ai,
+- **Streamable HTTP** (`POST /mcp`) — the client calls a URL and proves who it is on every
+  request, with either an OAuth access token it obtained by signing the user in (ChatGPT and
+  claude.ai connector dialogs) or an `Authorization: Bearer cap_...` API key (Claude Code,
   server-side agents). **We run this for you at `https://mcp.captureze.com/mcp`** — nothing to
   install, nothing to deploy.
 - **stdio** — the client starts the process; the API key comes from `CAPTUREZE_API_KEY`.
@@ -76,18 +77,47 @@ claude mcp add -s user --transport http captureze https://mcp.captureze.com/mcp 
   --header "Authorization: Bearer cap_xxx"
 ```
 
-## ChatGPT (developer mode / deep research connector)
+## ChatGPT (developer mode)
 
-ChatGPT connects only to **remote** MCP servers — no stdio — and, in deep research, only calls
-two tools: `search` and `fetch`. This server ships both, backed by the same account data as the
-`captureze_*` tools, so it registers cleanly:
+ChatGPT connects only to **remote** MCP servers — no stdio. Adding ours takes one URL and a
+sign-in; there is no key to paste and nothing to fill in under advanced settings.
 
-1. In ChatGPT: **Settings → Apps → Advanced settings → Developer mode**.
-2. Add a custom connector with the URL `https://mcp.captureze.com/mcp`.
-3. Set the API key as an `Authorization: Bearer cap_...` header.
+1. Turn on **developer mode**: **Settings → Plugins → Advanced settings**. The **+** that adds a
+   custom server is not rendered until this is on. (ChatGPT renamed Connectors to Plugins in July
+   2026; an account that still says **Apps** or **Connectors** has it in the same place, with
+   developer mode sometimes under **Security and login** instead.)
+2. **+** → server URL:
 
-Custom connectors are available on Pro, Plus, Business, Enterprise and Edu plans; on managed
-workspaces an admin has to permit them first.
+   ```
+   https://mcp.captureze.com/mcp
+   ```
+
+3. Authentication: **OAuth**. Press connect and sign in with your Captureze account. The
+   connector is then acting as you — the same plan, limits and sites you see in the app.
+
+The dialog needs nothing else because the endpoint answers discovery on every path ChatGPT
+probes. ChatGPT asks the MCP server's own origin for `oauth-authorization-server` **and**
+`openid-configuration` rather than only following the pointer in the `401`, and a connector that
+finds neither stops with "failed to resolve OAuth client". All six documents are served:
+
+| Path                                          | Document                                              |
+| --------------------------------------------- | ----------------------------------------------------- |
+| `/.well-known/oauth-protected-resource/mcp`   | RFC 9728 — the resource, and who issues tokens for it |
+| `/.well-known/oauth-protected-resource`       | the same document, on the path clients probe          |
+| `/.well-known/oauth-authorization-server`     | RFC 8414, mirrored from Clerk                         |
+| `/.well-known/oauth-authorization-server/mcp` | the same mirror                                       |
+| `/.well-known/openid-configuration`           | the same mirror                                       |
+| `/.well-known/openid-configuration/mcp`       | the same mirror                                       |
+
+Registration is the client's to do: ChatGPT registers itself against Clerk (CIMD, or dynamic
+client registration) and carries out the code exchange with PKCE. Nothing about the connector is
+configured on our side, which is what makes the flow a URL and a button.
+
+Prefer a key? **Access token / API key** in the same dialog attaches
+`Authorization: Bearer cap_...` to every request, and the endpoint takes it exactly as before.
+
+Custom connectors are available on Pro, Plus, Business, Enterprise and Edu plans, on the web app;
+on managed workspaces an admin has to permit them first.
 
 In developer mode the full `captureze_*` tool set is callable. In deep research only
 `search`/`fetch` are, which is why they exist:

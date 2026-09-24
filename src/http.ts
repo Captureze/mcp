@@ -25,6 +25,35 @@ const API_KEY_PREFIX = 'cap_';
 const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource/mcp';
 
 /**
+ * Where clients look for the RFC 9728 document. `PROTECTED_RESOURCE_PATH` is
+ * the one the spec derives from a resource with a path (`/mcp`), and the one
+ * the `401` points at; the bare path is the fallback a client probes when it
+ * has no pointer to follow — ChatGPT's connector among them.
+ */
+const PROTECTED_RESOURCE_PATHS = [PROTECTED_RESOURCE_PATH, '/.well-known/oauth-protected-resource'];
+
+/**
+ * Where clients look for authorization server metadata. The spec sends them to
+ * the *issuer* for this, which for us is Clerk — these are the paths clients
+ * try on the resource server itself before, or instead of, following the
+ * pointer. ChatGPT asks this origin for `oauth-authorization-server` **and**
+ * `openid-configuration` directly, and a connector that finds neither gives up
+ * with "failed to resolve OAuth client" rather than falling back to the issuer.
+ *
+ * All four answer with the same RFC 8414 document mirrored from Clerk: it is
+ * the one that carries `registration_endpoint`, which is what a client needs to
+ * register itself, and serving a thinner OpenID document on the OpenID paths
+ * would hand exactly the clients that ask for them a copy with no way to
+ * register.
+ */
+const AUTHORIZATION_SERVER_PATHS = [
+  '/.well-known/oauth-authorization-server',
+  '/.well-known/oauth-authorization-server/mcp',
+  '/.well-known/openid-configuration',
+  '/.well-known/openid-configuration/mcp',
+];
+
+/**
  * The credential a request arrived with, before we know whether it is any good.
  */
 interface PresentedCredential {
@@ -158,15 +187,14 @@ export function createHttpApp(options: HttpOptions) {
       next();
     };
 
-    app.options(
-      [PROTECTED_RESOURCE_PATH, '/.well-known/oauth-authorization-server'],
-      publicDocument,
-      (_req, res) => {
-        res.status(204).end();
-      },
-    );
+    app.options([...PROTECTED_RESOURCE_PATHS, ...AUTHORIZATION_SERVER_PATHS], publicDocument, (_req, res) => {
+      res.status(204).end();
+    });
 
-    app.get(PROTECTED_RESOURCE_PATH, publicDocument, (req, res) => {
+    // `resource` stays the MCP endpoint on every path, including the bare one:
+    // a client that probed the fallback is still talking to `/mcp`, and a
+    // document naming the origin instead would fail its audience check.
+    app.get(PROTECTED_RESOURCE_PATHS, publicDocument, (req, res) => {
       res.json(
         protectedResourceMetadata({
           resourceUrl: `${publicOrigin(req, oauth)}/mcp`,
@@ -176,7 +204,7 @@ export function createHttpApp(options: HttpOptions) {
       );
     });
 
-    app.get('/.well-known/oauth-authorization-server', publicDocument, async (_req, res) => {
+    app.get(AUTHORIZATION_SERVER_PATHS, publicDocument, async (_req, res) => {
       try {
         res.json(await oauth.authorizationServerMetadata());
       } catch (error) {
@@ -255,8 +283,15 @@ export function createHttpApp(options: HttpOptions) {
   });
 
   // Stateless mode keeps no stream open between requests, so the server-push
-  // half of Streamable HTTP has nothing to serve.
-  const methodNotAllowed = (_req: Request, res: Response) => {
+  // half of Streamable HTTP has nothing to serve. A caller with no credential
+  // is answered before that, though: connectors probe the endpoint with a bare
+  // GET to find out how to authenticate, and a 405 tells them nothing, while
+  // the 401 carries the pointer to the resource metadata.
+  const methodNotAllowed = (req: Request, res: Response) => {
+    if (!credentialFromRequest(req, config)) {
+      challenge(req, res, { oauth });
+      return;
+    }
     res.status(405).json({
       jsonrpc: '2.0',
       error: { code: -32000, message: 'This server runs stateless: use POST /mcp.' },
