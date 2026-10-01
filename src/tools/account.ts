@@ -12,7 +12,7 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext): void 
         'capture interval). Check this before promising the user a feature — geo-targeting, PDF output, full visual ' +
         'diff and certificates are all plan-gated — and after a 402 error, to say what needs upgrading.',
       inputSchema: {},
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Account plan and usage', readOnlyHint: true, openWorldHint: true },
     },
     guard(async () => {
       const billing = await ctx.client.getBilling();

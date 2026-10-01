@@ -17,7 +17,7 @@ export function registerEvidenceTools(server: McpServer, ctx: ToolContext): void
       inputSchema: {
         capture_id: z.string().uuid().describe('Capture id from captureze_list_captures.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Get the capture certificate', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ capture_id }) => {
       const certificate = await ctx.client.getCertificate(capture_id);

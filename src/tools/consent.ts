@@ -24,7 +24,13 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
           ),
         geo_city: z.string().max(100).optional().describe('Requires geo_country and the Business plan.'),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        title: 'Detect the cookie/consent banner',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     guard(async ({ url, ...geo }) => {
       const response = await ctx.client.detectConsent({ url, ...geo });
@@ -52,7 +58,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         job_id: z.string().describe('Job id returned by captureze_detect_consent_banner.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Get a consent detection result', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ job_id }) => {
       const response = await ctx.client.getConsentDetection(job_id);

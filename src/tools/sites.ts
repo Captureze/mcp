@@ -69,7 +69,7 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         'Lists every site (URL + capture settings + schedule) in the Captureze account, newest capture first. ' +
         'Start here when the user refers to a site by name — the returned id is what every other tool needs.',
       inputSchema: {},
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'List monitored sites', readOnlyHint: true, openWorldHint: true },
     },
     guard(async () => {
       const schedules = await ctx.client.listSchedules();
@@ -91,7 +91,7 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Get one monitored site', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id }) => {
       const schedule = await ctx.client.getSchedule(site_id);
@@ -139,6 +139,7 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         ...captureSettings,
       },
       annotations: {
+        title: 'Start monitoring a site',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -189,7 +190,13 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
         notify_on_diff: z.boolean().optional(),
         ...captureSettings,
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        title: 'Update a monitored site',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     guard(async ({ site_id, ...patch }) => {
       const schedule = await ctx.client.updateSchedule(site_id, patch as never);
@@ -207,7 +214,13 @@ export function registerSiteTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        title: 'Delete a monitored site',
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     guard(async ({ site_id }) => {
       await ctx.client.deleteSchedule(site_id);
