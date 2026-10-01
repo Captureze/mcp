@@ -16,7 +16,7 @@ export function registerDiffTools(server: McpServer, ctx: ToolContext): void {
         capture_id_1: z.string().uuid().describe('Older capture id.'),
         capture_id_2: z.string().uuid().describe('Newer capture id.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Compare two captures', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ capture_id_1, capture_id_2 }) => {
       const result = await ctx.client.compareScreenshots(capture_id_1, capture_id_2);
@@ -40,7 +40,7 @@ export function registerDiffTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Change history of a site', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id }) => {
       const { trend } = await ctx.client.diffTrend(site_id);

@@ -122,6 +122,21 @@ describe('captureze MCP server', () => {
     assert.equal(destructive?.annotations?.destructiveHint, true);
   });
 
+  // The Connectors Directory reads the listing name from annotations.title, not
+  // the top-level title, and flags any tool without it or without a read/write hint.
+  it('gives every tool the annotations the Connectors Directory checks', async () => {
+    const { client } = await connect(fakeApi().fetchImpl);
+    const { tools } = await client.listTools();
+    for (const tool of tools) {
+      assert.ok(tool.title, `${tool.name} has no title`);
+      assert.equal(tool.annotations?.title, tool.title, `${tool.name} annotations.title`);
+      assert.equal(typeof tool.annotations?.readOnlyHint, 'boolean', `${tool.name} readOnlyHint`);
+      if (!tool.annotations?.readOnlyHint) {
+        assert.equal(typeof tool.annotations?.destructiveHint, 'boolean', `${tool.name} destructiveHint`);
+      }
+    }
+  });
+
   it('omits search/fetch when the host does not need them', async () => {
     const { client } = await connect(fakeApi().fetchImpl, false);
     const names = (await client.listTools()).tools.map((tool) => tool.name);

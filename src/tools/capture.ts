@@ -156,6 +156,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         ...captureOptions,
       },
       annotations: {
+        title: 'Capture a URL now',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -228,6 +229,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         idempotency_key: idempotencyKey,
       },
       annotations: {
+        title: 'Capture an existing site now',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -270,7 +272,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many captures (default 10).'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'List captures of a site', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id, limit }) => {
       const screenshots = await ctx.client.listScreenshots(site_id, limit ?? 10);
@@ -299,7 +301,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           .optional()
           .describe('"diff" returns the highlighted change overlay, when one exists (default "screenshot").'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Look at a stored capture', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id, capture_id, variant }) => {
       const screenshots = await ctx.client.listScreenshots(site_id, 100);
@@ -353,7 +355,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many runs (default 20).'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'List capture runs of a site', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id, limit }) => {
       const executions = await ctx.client.listExecutions(site_id, limit ?? 20);

@@ -63,7 +63,7 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         query: z.string().describe('Domain, site name or URL fragment.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Search Captureze', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ query }) => {
       const sites = (await ctx.client.listSchedules()).filter((site) => matches(site, query));
@@ -114,7 +114,7 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
           .string()
           .describe('Id from `search`, e.g. "site:<uuid>" or "capture:<site-uuid>:<capture-uuid>".'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: { title: 'Fetch a Captureze record', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ id }) => {
       if (id.startsWith(CAPTURE_PREFIX)) {
