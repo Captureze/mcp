@@ -122,3 +122,19 @@ describe('describeSchedule', () => {
     assert.equal(neverCaptured.last_diff_percent, null);
   });
 });
+
+describe('consent_flow stage', () => {
+  it('names the frame of a consent_flow capture and calls anything else single', () => {
+    const BASE_URL = 'https://captureze.com';
+    const frame = describeCapture(
+      { id: '1', schedule_id: 's', file_path: 'a.png', state: 'post_accept', session_group: 'g' },
+      BASE_URL,
+    );
+    assert.equal(frame.stage, 'post_accept');
+    assert.equal(frame.session_group, 'g');
+    assert.equal(
+      describeCapture({ id: '2', schedule_id: 's', file_path: 'b.png' }, BASE_URL).stage,
+      'single',
+    );
+  });
+});

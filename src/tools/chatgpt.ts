@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './context.ts';
-import { describeCapture, guard, resolveCaptureUrl } from '../lib/format.ts';
+import { describeCapture, describeSchedule, guard, resolveCaptureUrl } from '../lib/format.ts';
 import type { Schedule } from '../lib/types.ts';
 
 /**
@@ -138,13 +138,30 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
       }
 
       const siteId = id.startsWith(SITE_PREFIX) ? id.slice(SITE_PREFIX.length) : id;
+      // The same allow-listed shape as captureze_get_site. This used to pass the
+      // raw API row through, owner id, stored credentials and injected script
+      // included, straight into the model's context.
       const site = await ctx.client.getSchedule(siteId);
       const captures = await ctx.client.listScreenshots(siteId, 10);
+      const latest = captures[0];
+      const described = describeSchedule({
+        ...site,
+        latest_screenshot: latest
+          ? {
+              id: latest.id,
+              created_at: latest.created_at ?? null,
+              diff_percent: latest.diff_percent ?? null,
+            }
+          : null,
+      });
       const document = {
         id: `${SITE_PREFIX}${siteId}`,
         title: site.name,
         text: JSON.stringify(
-          { site, recent_captures: captures.map((shot) => describeCapture(shot, ctx.client.baseUrl)) },
+          {
+            site: described,
+            recent_captures: captures.map((shot) => describeCapture(shot, ctx.client.baseUrl)),
+          },
           null,
           2,
         ),

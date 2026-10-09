@@ -19,7 +19,9 @@ export interface Schedule {
   geo_country?: string | null;
   geo_city?: string | null;
   capture_recipe?: string | null;
+  recipe_config?: Record<string, unknown> | null;
   dismiss_cookie_banners?: boolean | null;
+  notify_on_diff?: boolean | null;
   wait_for_selector?: string | null;
   hide_selectors?: string[] | null;
   created_at?: string;
@@ -99,6 +101,8 @@ export interface Screenshot {
   baseline_screenshot_id?: string | null;
   proxy_tier?: number | null;
   session_group?: string | null;
+  /** consent_flow frame: pre_consent | post_accept | post_reject; 'single' otherwise. */
+  state?: string | null;
   frame_count?: number | null;
   created_at?: string;
   /** Only the list endpoint computes these aliases. */
@@ -187,6 +191,8 @@ export interface CaptureCertificate {
   device_type?: string | null;
   proxy_country?: string | null;
   proxy_city?: string | null;
+  /** consent_flow frame (pre_consent, post_accept, post_reject) or "single". */
+  capture_stage?: string | null;
   proxy_type?: string | null;
   storage_region?: string | null;
   privacy_mode?: boolean | null;

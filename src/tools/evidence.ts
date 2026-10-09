@@ -29,9 +29,18 @@ export function registerEvidenceTools(server: McpServer, ctx: ToolContext): void
         : certificate.timestamp_status === 'pending'
           ? 'Independent timestamp pending: it is still being obtained — ask again in a minute.'
           : 'No independent timestamp: the capture time is recorded by Captureze only.';
+      // Only the country is measured at the proxy exit. A city is what the
+      // residential gateway was asked to target, and must not read as proven.
+      const cityLine = certificate.proxy_city
+        ? ` City ${certificate.proxy_city} was targeted at the proxy gateway; only the country is measured.`
+        : '';
+      const stageLine =
+        certificate.capture_stage && certificate.capture_stage !== 'single'
+          ? ` consent_flow frame: ${certificate.capture_stage}.`
+          : '';
       return toolResult(
         `Certificate ${certificate.certificate_id} for ${certificate.page_url}, captured ${certificate.captured_at}. ` +
-          `${timestampLine} Verify at ${certificate.verify_url}.\n\n${jsonBlock(certificate)}`,
+          `${timestampLine}${cityLine}${stageLine} Verify at ${certificate.verify_url}.\n\n${jsonBlock(certificate)}`,
         { certificate },
       );
     }),

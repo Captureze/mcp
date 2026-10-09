@@ -82,6 +82,11 @@ function fakeApi({
       return json({ ...SITE, ...JSON.parse(String(init?.body)) });
     }
     if (url.endsWith('/api/billing') && method === 'GET') return json(billing);
+    const detail = /\/api\/schedules\/([0-9a-f-]{36})$/.exec(url);
+    if (detail && method === 'GET') {
+      const site = (sites as Array<{ id: string }>).find((candidate) => candidate.id === detail[1]);
+      return site ? json(site) : json({ error: 'Schedule not found' }, 404);
+    }
     if (url.includes('/capture') && method === 'POST') return json(captureBody, captureStatus);
     if (url.includes('/screenshots?')) return json([CAPTURE]);
     if (url.includes('/screenshots/')) {
@@ -452,6 +457,113 @@ describe('captureze MCP server', () => {
     const content = result.content as Array<{ type: string; text: string }>;
 
     assert.equal(content[0]!.text.split('\n')[0], 'Plan: unknown');
+  });
+
+  describe('what leaves the server about a site', () => {
+    // The raw API row: owner, stored credentials, injected script, mailbox.
+    const RAW_SITE = {
+      ...SITE,
+      user_id: 'user_2abcSECRET',
+      auth_config: { type: 'basic', username: 'admin', password: 'hunter2' },
+      custom_headers: { Authorization: 'Bearer sk_live_SECRET' },
+      inject_script: 'localStorage.token = "SECRET"',
+      notification_email: 'owner@example.com',
+      proxy_check_count: 4,
+      capture_recipe: 'consent_flow',
+      recipe_config: { accept_selector: '#accept', reject_selector: '#reject', secret: 'x' },
+      viewport_preset: null,
+      width: 1920,
+      height: 1080,
+    };
+    const SECRETS = [
+      'user_2abcSECRET',
+      'hunter2',
+      'sk_live_SECRET',
+      'localStorage.token',
+      'owner@example.com',
+      'proxy_check_count',
+    ];
+
+    const everything = (result: Record<string, unknown>) =>
+      JSON.stringify([result.content, result.structuredContent]);
+
+    it('fetch returns the allow-listed site, never the raw row', async () => {
+      const { client } = await connect(fakeApi({ sites: [RAW_SITE] }).fetchImpl);
+      const result = await client.callTool({ name: 'fetch', arguments: { id: `site:${SITE.id}` } });
+      const dump = everything(result);
+      for (const secret of SECRETS) assert.ok(!dump.includes(secret), `fetch leaked ${secret}`);
+      const site = JSON.parse((result.structuredContent as { text: string }).text).site;
+      assert.equal(site.capture_recipe, 'consent_flow');
+      assert.deepEqual(site.recipe_config, { accept_selector: '#accept', reject_selector: '#reject' });
+      assert.equal(site.last_capture_at, CAPTURE.created_at);
+    });
+
+    it('get_site shows the recipe and the last capture, and leaks nothing in its text either', async () => {
+      const { client } = await connect(fakeApi({ sites: [RAW_SITE] }).fetchImpl);
+      const result = await client.callTool({ name: 'captureze_get_site', arguments: { site_id: SITE.id } });
+      const dump = everything(result);
+      for (const secret of SECRETS) assert.ok(!dump.includes(secret), `get_site leaked ${secret}`);
+      const site = (result.structuredContent as { site: Record<string, unknown> }).site;
+      assert.equal(site.capture_recipe, 'consent_flow');
+      assert.equal(site.viewport, 'desktop');
+      assert.equal(site.last_capture_at, CAPTURE.created_at);
+      assert.equal(site.last_diff_percent, CAPTURE.diff_percent);
+    });
+
+    it('calls a missing site a site', async () => {
+      const { client } = await connect(fakeApi().fetchImpl);
+      const result = await client.callTool({ name: 'captureze_get_site', arguments: { site_id: SITE.id } });
+      const text = (result.content as Array<{ text: string }>)[0]!.text;
+      assert.match(text, /Site not found/);
+      assert.ok(!text.includes('Schedule'));
+    });
+
+    it('lists the most recently captured site first', async () => {
+      const at = (iso: string | null) => (iso ? { id: iso, created_at: iso, diff_percent: null } : null);
+      const sites = [
+        {
+          ...SITE,
+          id: 'a',
+          name: 'old-created, captured late',
+          created_at: '2026-01-01T00:00:00Z',
+          latest_screenshot: at('2026-10-09T22:00:00Z'),
+        },
+        {
+          ...SITE,
+          id: 'b',
+          name: 'never captured',
+          created_at: '2026-10-01T00:00:00Z',
+          latest_screenshot: null,
+        },
+        {
+          ...SITE,
+          id: 'c',
+          name: 'captured early',
+          created_at: '2026-09-01T00:00:00Z',
+          latest_screenshot: at('2026-10-09T07:00:00Z'),
+        },
+      ];
+      const { client } = await connect(fakeApi({ sites }).fetchImpl);
+      const result = await client.callTool({ name: 'captureze_list_sites', arguments: {} });
+      const listed = (result.structuredContent as { sites: Array<{ id: string }> }).sites.map(
+        (site) => site.id,
+      );
+      assert.deepEqual(listed, ['a', 'c', 'b']);
+    });
+  });
+
+  it('keeps proxy internals out of the account status', async () => {
+    const billing = {
+      ...BILLING,
+      proxy: { tier0Count: 203, tier1Count: 18, totalCost: 0.0015 },
+    };
+    const { client } = await connect(fakeApi({ billing }).fetchImpl);
+    const result = await client.callTool({ name: 'captureze_account_status', arguments: {} });
+    const dump = JSON.stringify([result.content, result.structuredContent]);
+    assert.ok(!dump.includes('tier0Count') && !dump.includes('totalCost'));
+    const account = (result.structuredContent as { account: Record<string, unknown> }).account;
+    assert.deepEqual(account.features, ['Full visual diff']);
+    assert.equal(account.plan, 'pro');
   });
 
   describe('timeouts and retries', () => {

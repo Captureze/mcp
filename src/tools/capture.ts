@@ -267,7 +267,8 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       title: 'List captures of a site',
       description:
         'Capture history for one site, newest first, with the change percentage of each capture against the one ' +
-        'before it. Use it to answer "when did this page change?" and to get capture ids for diffing.',
+        'before it. Use it to answer "when did this page change?" and to get capture ids for diffing. ' +
+        'consent_flow frames carry their stage (pre_consent, post_accept, post_reject) and share a session_group.',
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many captures (default 10).'),
@@ -350,7 +351,9 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       title: 'List capture runs of a site',
       description:
         'Execution log for a site: when each scheduled or manual capture ran, whether it succeeded, how long it took ' +
-        'and the error if it failed. Use this to debug "why is this site not updating?".',
+        'and the error if it failed. Use this to debug "why is this site not updating?". For a consent_flow site ' +
+        "one run stores several frames; capture_id is the run's pre_consent frame, and captureze_list_captures " +
+        'lists every frame with its stage.',
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many runs (default 20).'),

@@ -442,9 +442,12 @@ export class CapturezeClient {
 
 function apiError(status: number, parsed: unknown, fallback: string): CapturezeApiError {
   const payload = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+  // The REST API calls a site a "schedule"; every tool here calls it a site.
+  const message =
+    typeof payload.error === 'string' ? payload.error.replace(/\bSchedule\b/g, 'Site') : fallback;
   return new CapturezeApiError(
     status,
-    typeof payload.error === 'string' ? payload.error : fallback,
+    message,
     typeof payload.code === 'string' ? payload.code : undefined,
     payload,
   );

@@ -70,7 +70,35 @@ export function resolveDiffUrl(screenshot: Screenshot, baseUrl: string): string 
   }
 }
 
+/** The API's viewport presets; a site stored with bare dimensions that equal one is that preset. */
+const VIEWPORT_PRESETS: Record<string, { width: number; height: number }> = {
+  desktop: { width: 1920, height: 1080 },
+  laptop: { width: 1366, height: 768 },
+  tablet: { width: 768, height: 1024 },
+  mobile: { width: 375, height: 812 },
+};
+
+function describeViewport(schedule: Schedule): string {
+  if (schedule.viewport_preset && schedule.viewport_preset !== 'custom') return schedule.viewport_preset;
+  const width = schedule.width ?? 1920;
+  const height = schedule.height ?? 1080;
+  if (!schedule.viewport_preset) {
+    const preset = Object.entries(VIEWPORT_PRESETS).find(
+      ([, size]) => size.width === width && size.height === height,
+    );
+    if (preset) return preset[0];
+  }
+  return `${width}x${height}`;
+}
+
+/**
+ * The one shape a site leaves this server in, from every tool. An explicit
+ * allow-list: the API row also carries the owner's id, stored credentials
+ * (`auth_config`, `custom_headers`), injected scripts and notification
+ * addresses, none of which belongs in a model's context.
+ */
 export function describeSchedule(schedule: Schedule): Record<string, unknown> {
+  const recipe = schedule.capture_recipe ?? 'single';
   return {
     id: schedule.id,
     name: schedule.name,
@@ -78,16 +106,31 @@ export function describeSchedule(schedule: Schedule): Record<string, unknown> {
     cron_expression: schedule.cron_expression,
     timezone: schedule.timezone ?? null,
     monitoring_active: schedule.is_active ?? false,
-    viewport:
-      schedule.viewport_preset && schedule.viewport_preset !== 'custom'
-        ? schedule.viewport_preset
-        : `${schedule.width ?? 1920}x${schedule.height ?? 1080}`,
+    viewport: describeViewport(schedule),
     full_page: schedule.full_page ?? false,
     output_format: schedule.output_format ?? 'png',
     geo: schedule.geo_country ? [schedule.geo_city, schedule.geo_country].filter(Boolean).join(', ') : null,
+    capture_recipe: recipe,
+    recipe_config: recipe === 'consent_flow' ? describeRecipeConfig(schedule.recipe_config) : null,
+    dismiss_cookie_banners: schedule.dismiss_cookie_banners ?? false,
+    wait_for_selector: schedule.wait_for_selector ?? null,
+    hide_selectors: schedule.hide_selectors ?? [],
+    diff_threshold: schedule.diff_threshold ?? null,
+    notify_on_diff: typeof schedule.notify_on_diff === 'boolean' ? schedule.notify_on_diff : null,
+    created_at: schedule.created_at ?? null,
     last_capture_at: schedule.latest_screenshot?.created_at ?? null,
     last_diff_percent: schedule.latest_screenshot?.diff_percent ?? null,
   };
+}
+
+/** consent_flow settings, by name: selectors and timings only. */
+function describeRecipeConfig(config: unknown): Record<string, unknown> | null {
+  if (!config || typeof config !== 'object') return null;
+  const source = config as Record<string, unknown>;
+  const allowed = ['accept_selector', 'reject_selector', 'wait_after_click_ms', 'interaction_timeout_ms'];
+  return Object.fromEntries(
+    allowed.filter((key) => source[key] !== undefined).map((key) => [key, source[key]]),
+  );
 }
 
 export function describeCapture(screenshot: Screenshot, baseUrl: string): Record<string, unknown> {
@@ -100,6 +143,9 @@ export function describeCapture(screenshot: Screenshot, baseUrl: string): Record
     diff_percent: screenshot.diff_percent ?? null,
     file_size_bytes: screenshot.file_size ?? null,
     proxy_tier: screenshot.proxy_tier ?? null,
+    // consent_flow frames share a session_group; `stage` says which one this
+    // is (pre_consent, post_accept, post_reject). 'single' otherwise.
+    stage: typeof screenshot.state === 'string' ? screenshot.state : 'single',
     session_group: screenshot.session_group ?? null,
   };
 }
