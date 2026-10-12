@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeCapture, describeSchedule, resolveCaptureUrl, toolError } from './format.ts';
+import { resolveCaptureUrl, toolError } from './format.ts';
+import { toPublicCapture, toPublicSite } from './public.ts';
 import { CapturezeApiError } from './errors.ts';
 
 const BASE = 'https://captureze.com';
@@ -34,10 +35,10 @@ describe('resolveCaptureUrl', () => {
   });
 });
 
-describe('describeCapture', () => {
+describe('toPublicCapture', () => {
   it('keeps a missing diff distinguishable from a zero diff', () => {
-    const first = describeCapture({ id: '1', schedule_id: 's', file_path: 'a.png' }, BASE);
-    const unchanged = describeCapture(
+    const first = toPublicCapture({ id: '1', schedule_id: 's', file_path: 'a.png' }, BASE);
+    const unchanged = toPublicCapture(
       { id: '2', schedule_id: 's', file_path: 'b.png', diff_percent: 0 },
       BASE,
     );
@@ -73,12 +74,12 @@ describe('toolError', () => {
   });
 });
 
-describe('describeSchedule', () => {
+describe('toPublicSite', () => {
   // The list endpoint joins the newest capture as a nested `latest_screenshot`
   // object (src/db/schedules.js). Reading flat `last_screenshot_at` fields the
   // API has never emitted is what made every site report "never captured".
   it('reports the last capture from the nested latest_screenshot the API sends', () => {
-    const site = describeSchedule({
+    const site = toPublicSite({
       id: 'abc',
       name: 'apple.com',
       url: 'https://apple.com',
@@ -96,7 +97,7 @@ describe('describeSchedule', () => {
   });
 
   it('keeps a first capture (no diff yet) distinguishable from no capture at all', () => {
-    const firstCapture = describeSchedule({
+    const firstCapture = toPublicSite({
       id: 'abc',
       name: 'apple.com',
       url: 'https://apple.com',
@@ -108,7 +109,7 @@ describe('describeSchedule', () => {
         created_at: '2026-09-15T18:27:20.430Z',
       },
     });
-    const neverCaptured = describeSchedule({
+    const neverCaptured = toPublicSite({
       id: 'def',
       name: 'example.com',
       url: 'https://example.com',

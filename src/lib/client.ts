@@ -54,6 +54,9 @@ export interface DownloadedImage {
   url: string;
 }
 
+/** A capture image is never larger than this; anything bigger is refused unread. */
+const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+
 const MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -423,13 +426,26 @@ export class CapturezeClient {
       );
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const headerType = response.headers.get('content-type')?.split(';')[0]?.trim();
+    // The URL may point at storage the account configured, so only an image
+    // of a sane size is taken from it: anything else is not a capture.
+    const headerType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
     const extension = absolute.pathname.split('.').pop()?.toLowerCase() ?? '';
     const mimeType =
-      headerType && headerType !== 'application/octet-stream'
-        ? headerType
-        : (MIME_BY_EXTENSION[extension] ?? 'image/png');
+      headerType && headerType !== 'application/octet-stream' ? headerType : MIME_BY_EXTENSION[extension];
+    if (!mimeType?.startsWith('image/')) {
+      throw new Error(
+        `Refusing to download a capture served as ${mimeType ?? headerType ?? 'an unknown type'}`,
+      );
+    }
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`Refusing to download a ${declared}-byte capture`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`Refusing to download a ${buffer.byteLength}-byte capture`);
+    }
 
     return {
       data: buffer.toString('base64'),

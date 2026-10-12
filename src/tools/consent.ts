@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './context.ts';
 import { guard, jsonBlock, toolResult } from '../lib/format.ts';
+import { toPublicConsentResult } from '../lib/public.ts';
 
 export function registerConsentTools(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
@@ -35,10 +36,8 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
     guard(async ({ url, ...geo }) => {
       const response = await ctx.client.detectConsent({ url, ...geo });
       if (response.cached && response.result) {
-        return toolResult(`Cached detection for ${url}:\n\n${jsonBlock(response.result)}`, {
-          cached: true,
-          result: response.result,
-        });
+        const result = toPublicConsentResult(response.result);
+        return toolResult(`Cached detection for ${url}:\n\n${jsonBlock(result)}`, { cached: true, result });
       }
       return toolResult(
         `Detection started for ${url} (job ${response.job_id}, status ${response.status}). ` +
@@ -62,7 +61,14 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
     },
     guard(async ({ job_id }) => {
       const response = await ctx.client.getConsentDetection(job_id);
-      return toolResult(jsonBlock(response), { detection: response });
+      const detection = {
+        job_id: response.job_id ?? job_id,
+        status: response.status ?? null,
+        stage: response.stage ?? null,
+        result: toPublicConsentResult(response.result),
+        error: response.error ?? null,
+      };
+      return toolResult(jsonBlock(detection), { detection });
     }),
   );
 }

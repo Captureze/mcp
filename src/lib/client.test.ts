@@ -115,6 +115,33 @@ describe('CapturezeClient', () => {
     assert.equal(image.mimeType, 'image/jpeg');
   });
 
+  it('takes only images from capture storage', async () => {
+    for (const [type, path] of [
+      ['application/json', '/latest/meta-data/iam'],
+      ['text/plain', '/shot.png'],
+      ['text/html', '/shot.png'],
+      ['application/octet-stream', '/secrets.txt'],
+    ] as const) {
+      const { fetchImpl } = stubFetch(
+        () => new Response('{"token":"x"}', { status: 200, headers: { 'content-type': type } }),
+      );
+      const client = new CapturezeClient({ baseUrl: 'https://captureze.com', apiKey: 'cap_test', fetchImpl });
+      await assert.rejects(client.downloadImage(`http://bucket.example.com${path}`), /Refusing to download/);
+    }
+  });
+
+  it('refuses an oversized capture before reading it', async () => {
+    const { fetchImpl } = stubFetch(
+      () =>
+        new Response('x', {
+          status: 200,
+          headers: { 'content-type': 'image/png', 'content-length': String(60 * 1024 * 1024) },
+        }),
+    );
+    const client = new CapturezeClient({ baseUrl: 'https://captureze.com', apiKey: 'cap_test', fetchImpl });
+    await assert.rejects(client.downloadImage('/screenshots/a/b.png'), /Refusing to download/);
+  });
+
   describe('captures that outlive a request', () => {
     const EXECUTION = '33333333-3333-4333-8333-333333333333';
     const SHOT = { id: 'shot-1', file_path: 'site/shot.png' };

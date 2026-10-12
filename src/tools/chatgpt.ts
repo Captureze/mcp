@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './context.ts';
-import { describeCapture, guard, resolveCaptureUrl } from '../lib/format.ts';
+import { guard, resolveCaptureUrl } from '../lib/format.ts';
+import { loadPublicSite, toPublicCapture } from '../lib/public.ts';
 import type { Schedule } from '../lib/types.ts';
 
 /**
@@ -123,7 +124,7 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
         const captures = await ctx.client.listScreenshots(siteId, 100);
         const capture = captures.find((shot) => shot.id === captureId);
         if (!capture) throw new Error(`Capture ${captureId} not found on site ${siteId}.`);
-        const described = describeCapture(capture, ctx.client.baseUrl);
+        const described = toPublicCapture(capture, ctx.client.baseUrl);
         const document = {
           id,
           title: `Capture ${captureId}`,
@@ -138,13 +139,14 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
       }
 
       const siteId = id.startsWith(SITE_PREFIX) ? id.slice(SITE_PREFIX.length) : id;
-      const site = await ctx.client.getSchedule(siteId);
+      // The same site object as captureze_get_site.
+      const site = await loadPublicSite(ctx.client, siteId);
       const captures = await ctx.client.listScreenshots(siteId, 10);
       const document = {
         id: `${SITE_PREFIX}${siteId}`,
         title: site.name,
         text: JSON.stringify(
-          { site, recent_captures: captures.map((shot) => describeCapture(shot, ctx.client.baseUrl)) },
+          { site, recent_captures: captures.map((shot) => toPublicCapture(shot, ctx.client.baseUrl)) },
           null,
           2,
         ),

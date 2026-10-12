@@ -29,8 +29,7 @@ export interface Schedule {
    * newest run onto every row. Both are null for a site that has never been
    * captured, so `latest_screenshot: null` means "never", while a present
    * object with `diff_percent: null` means "captured once, nothing to diff".
-   * The detail endpoint (`GET /schedules/:id`) returns the bare row and omits
-   * both.
+   * The detail endpoint (`GET /schedules/:id`) returns the same shape.
    */
   latest_screenshot?: ScheduleLatestScreenshot | null;
   latest_execution?: ScheduleLatestExecution | null;
@@ -46,7 +45,11 @@ export interface ScheduleLatestScreenshot {
   thumb_url?: string | null;
   diff_url?: string | null;
   created_at?: string | null;
+  /** When the page was photographed. */
+  captured_at?: string | null;
   proxy_tier?: number | null;
+  /** consent_flow frame: pre_consent | post_accept | post_reject; null for a single capture. */
+  state?: string | null;
 }
 
 export interface ScheduleLatestExecution {
@@ -122,6 +125,12 @@ export interface GeoVerification {
   /** False for both a wrong country and one that could not be measured. */
   honoured?: boolean;
   detail?: string;
+  requested_city?: string | null;
+  observed_city?: string | null;
+  /** not_requested | confirmed | not_confirmed | unverified */
+  city_status?: string;
+  city_honoured?: boolean;
+  city_detail?: string;
 }
 
 export interface Execution {
@@ -133,6 +142,8 @@ export interface Execution {
   duration_ms?: number | null;
   error_message?: string | null;
   screenshot_id?: string | null;
+  /** Every capture the run stored, with its stage. */
+  captures?: { capture_id: string; stage: string | null }[];
   [key: string]: unknown;
 }
 
@@ -170,8 +181,9 @@ export interface ScreenshotComparison {
 
 export interface DiffTrendPoint {
   id: string;
-  diff_percent: number;
+  diff_percent: number | null;
   created_at: string;
+  captured_at?: string | null;
 }
 
 export interface CaptureCertificate {
