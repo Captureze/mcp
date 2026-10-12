@@ -26,7 +26,7 @@ export class CapturezeApiError extends Error {
       case 403:
         return 'The API key is valid but not allowed to do this.';
       case 404:
-        return 'No such object for this account. List sites first and use an id from that list.';
+        return 'No such site, capture or run in this account. List sites first and use an id from that list.';
       case 429:
         return 'Rate limited. Wait before retrying; do not retry in a tight loop.';
       case 502:

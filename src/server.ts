@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CapturezeClient, type FetchLike } from './lib/client.ts';
 import type { ServerConfig } from './lib/config.ts';
 import { jsonBlock } from './lib/format.ts';
+import { bySiteRecency, toPublicSite } from './lib/public.ts';
 import { registerAccountTools } from './tools/account.ts';
 import { registerCaptureTools } from './tools/capture.ts';
 import { registerChatGptTools } from './tools/chatgpt.ts';
@@ -25,9 +26,12 @@ Pick the tool by what the user is after:
 - "prove what it looked like" (legal, GDPR, ad compliance) -> captureze_get_capture_certificate
 - cookie banner work -> captureze_detect_consent_banner
 
-Captures take 10-60 seconds and cost the account a capture credit: never loop on the same URL. A capture
-whose call timed out still finishes: call again with the same idempotency_key to collect it without paying
-twice. Plan limits come back as errors that say what to upgrade — report them to the user instead of retrying.`;
+Captures take 10-60 seconds and cost the account a capture credit: never loop on the same URL. Creating or
+resuming a monitor takes one capture right away (its initial_capture). A consent_flow site stores one capture per
+stage (pre_consent, post_accept, post_reject) and bills each. A capture whose call timed out still finishes: call
+again with the same idempotency_key to collect it without paying twice. Plan limits come back as errors that name
+the plan to upgrade to — report them to the user instead of retrying; captureze_account_status lists what the
+plan includes.`;
 
 export interface CreateServerOptions {
   config: ServerConfig;
@@ -82,7 +86,7 @@ function registerResources(server: McpServer, ctx: ToolContext): void {
       mimeType: 'application/json',
     },
     async (uri) => {
-      const sites = await ctx.client.listSchedules();
+      const sites = (await ctx.client.listSchedules()).map(toPublicSite).sort(bySiteRecency);
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(sites, null, 2) }],
       };

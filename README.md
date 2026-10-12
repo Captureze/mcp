@@ -140,11 +140,22 @@ That also applies when the site already exists: a paused site for the URL is res
 site for the URL the same way, keeping its capture history, instead of creating a second one. A
 capture without `monitor` never pauses, reschedules or reconfigures an existing site.
 
+Creating or resuming a monitor takes one capture straight away, as the baseline later captures are
+diffed against. It uses one capture credit and comes back as `initial_capture`; it is `null` when
+the call only changed the schedule of a site already being monitored.
+
+### What a response contains
+
+Every tool answers with the same allow-listed objects: a site, a capture (with its `stage`:
+`single`, or `pre_consent` / `post_accept` / `post_reject` for a consent-flow capture), a run, the
+account. A site says whether it sends credentials, extra headers or a script (`has_auth`,
+`has_custom_headers`, `has_inject_script`) but never what they are.
+
 ### Timeouts and retries
 
 A capture takes 10-60 seconds and is billed. The server starts it in async mode and polls it, so no
 request is held open for the whole capture, and every capture carries an idempotency key. Pass your own
-as `idempotency_key` to `captureze_capture_url` or `captureze_capture_site`. If the call times out, the
+as `idempotency_key` to `captureze_capture_url`, `captureze_capture_site` or `captureze_monitor_site`. If the call times out, the
 capture still finishes on the server: call again with the same key and you get that capture back,
 without a second charge. Reusing a key with different options is refused. When the MCP server itself runs out of time, its error names the key to retry
 with. Only one on-demand capture of a site runs at a time. A call made while one is running waits for

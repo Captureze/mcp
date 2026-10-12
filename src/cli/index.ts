@@ -3,7 +3,8 @@ import { Command } from 'commander';
 import { CapturezeClient } from '../lib/client.ts';
 import { loadConfig } from '../lib/config.ts';
 import { ensureSiteForUrl } from '../lib/ensure-site.ts';
-import { describeCapture, describeSchedule, resolveCaptureUrl } from '../lib/format.ts';
+import { resolveCaptureUrl } from '../lib/format.ts';
+import { toPublicCapture, toPublicSite } from '../lib/public.ts';
 import { CapturezeApiError, CapturezeTimeoutError } from '../lib/errors.ts';
 import { SERVER_VERSION } from '../server.ts';
 
@@ -102,8 +103,8 @@ export function buildProgram(): Command {
       await deliverImage(api, capture, options.out as string | undefined);
       print({
         site_created: created,
-        site: describeSchedule(schedule),
-        ...describeCapture(capture, api.baseUrl),
+        site: toPublicSite(schedule),
+        ...toPublicCapture(capture, api.baseUrl),
       });
     });
 
@@ -116,7 +117,7 @@ export function buildProgram(): Command {
       const api = client();
       const capture = await api.capture(siteId);
       await deliverImage(api, capture, options.out);
-      print(describeCapture(capture, api.baseUrl));
+      print(toPublicCapture(capture, api.baseUrl));
     });
 
   program
@@ -124,7 +125,7 @@ export function buildProgram(): Command {
     .description('list monitored sites')
     .action(async () => {
       const api = client();
-      print((await api.listSchedules()).map(describeSchedule));
+      print((await api.listSchedules()).map(toPublicSite));
     });
 
   program
@@ -152,7 +153,7 @@ export function buildProgram(): Command {
         ...(options.name ? { name: options.name } : {}),
         settings: { ...(options.timezone ? { timezone: options.timezone } : {}) },
       });
-      print(describeSchedule(schedule));
+      print(toPublicSite(schedule));
     });
 
   program
@@ -176,7 +177,7 @@ export function buildProgram(): Command {
     .action(async (siteId: string, options: { limit: string }) => {
       const api = client();
       const captures = await api.listScreenshots(siteId, Number.parseInt(options.limit, 10));
-      print(captures.map((capture) => describeCapture(capture, api.baseUrl)));
+      print(captures.map((capture) => toPublicCapture(capture, api.baseUrl)));
     });
 
   program

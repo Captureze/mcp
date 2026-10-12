@@ -61,6 +61,7 @@ function fakeApi({
   createBodies: Record<string, unknown>[];
 } {
   const requests: string[] = [];
+  const store: unknown[] = [...sites];
   // Per-capture overrides travel in the POST body, so asserting on the URL
   // alone cannot tell an honoured option from a dropped one.
   const captureBodies: Record<string, unknown>[] = [];
@@ -76,10 +77,23 @@ function fakeApi({
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-    if (url.endsWith('/api/schedules') && method === 'GET') return json(sites);
+    // A small store, so a site created or changed by one request is what the
+    // next request reads back — tools re-read the site they answer with.
+    if (url.endsWith('/api/schedules') && method === 'GET') return json(store);
     if (url.endsWith('/api/schedules') && method === 'POST') {
       createBodies.push(JSON.parse(String(init?.body)));
-      return json({ ...SITE, ...JSON.parse(String(init?.body)) });
+      const created = { ...SITE, ...JSON.parse(String(init?.body)) };
+      store.push(created);
+      return json(created);
+    }
+    const one = /\/api\/schedules\/([^/?]+)$/.exec(url);
+    if (one) {
+      const index = store.findIndex((site) => (site as { id?: string }).id === one[1]);
+      if (index === -1) return json({ error: 'Site not found' }, 404);
+      if (method === 'PUT') {
+        store[index] = { ...(store[index] as object), ...JSON.parse(String(init?.body)) };
+      }
+      if (method === 'GET' || method === 'PUT') return json(store[index]);
     }
     if (url.endsWith('/api/billing') && method === 'GET') return json(billing);
     if (url.includes('/capture') && method === 'POST') return json(captureBody, captureStatus);

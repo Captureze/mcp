@@ -4,7 +4,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolContext } from './context.ts';
 import { ensureSiteForUrl } from '../lib/ensure-site.ts';
 import {
-  describeCapture,
+  cityVerificationNote,
   formatBytes,
   geoVerificationFailure,
   guard,
@@ -13,6 +13,7 @@ import {
   toolResult,
 } from '../lib/format.ts';
 import type { Screenshot } from '../lib/types.ts';
+import { loadPublicSite, toPublicCapture, toPublicGeo, toPublicRun } from '../lib/public.ts';
 import type { CaptureOutcome } from '../lib/client.ts';
 
 const captureOptions = {
@@ -38,7 +39,7 @@ const captureOptions = {
   dismiss_cookie_banners: z.boolean().optional(),
 } as const;
 
-const idempotencyKey = z
+export const idempotencyKey = z
   .string()
   .regex(/^[\x21-\x7e]{1,255}$/)
   .optional()
@@ -54,7 +55,7 @@ const idempotencyKey = z
  * options this call asked for. A requested country is the one option checked,
  * because a capture from the wrong country is the silent failure that matters.
  */
-async function takeCapture(
+export async function takeCapture(
   ctx: ToolContext,
   siteId: string,
   settings: Record<string, unknown>,
@@ -113,11 +114,11 @@ async function imageContent(
 }
 
 function captureSummary(screenshot: Screenshot, baseUrl: string, prefix: string): string {
-  const described = describeCapture(screenshot, baseUrl);
+  const described = toPublicCapture(screenshot, baseUrl);
   const diff =
     screenshot.diff_percent === null || screenshot.diff_percent === undefined
       ? 'no previous capture to diff against'
-      : `${Number(screenshot.diff_percent).toFixed(2)}% changed vs the previous capture`;
+      : `${Number(screenshot.diff_percent).toFixed(2)}% changed vs the previous capture${described.stage === 'single' ? '' : ` of the ${described.stage} stage`}`;
   return `${prefix}\n${diff}.\n\n${jsonBlock(described)}`;
 }
 
@@ -201,10 +202,15 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           ? `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}; for monitor: ${changed.join('; ')} — monitoring on "${schedule.cron_expression}").`
           : `Captured ${url} (existing site "${schedule.name}", id ${schedule.id}, ${schedule.is_active ? `monitoring on "${schedule.cron_expression}"` : 'paused — no scheduled captures'}).`;
 
+      const site = await loadPublicSite(ctx.client, schedule.id);
+      const cityNote = cityVerificationNote(screenshot);
+      const geo = toPublicGeo(screenshot);
       return toolResult(
-        `${captureSummary(screenshot, ctx.client.baseUrl, prefix)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}`,
+        `${captureSummary(screenshot, ctx.client.baseUrl, prefix)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}${cityNote ? `\n${cityNote}` : ''}`,
         {
-          ...describeCapture(screenshot, ctx.client.baseUrl),
+          ...toPublicCapture(screenshot, ctx.client.baseUrl),
+          ...(geo ? { geo } : {}),
+          site,
           site_created: created,
           site_changes: changed,
           monitoring: schedule.is_active ?? false,
@@ -249,10 +255,13 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
         (include_image ?? true)
           ? await imageContent(ctx, screenshot)
           : { blocks: [] as CallToolResult['content'], note: 'Image not requested.' };
+      const cityNote = cityVerificationNote(screenshot);
+      const geo = toPublicGeo(screenshot);
       return toolResult(
-        `${captureSummary(screenshot, ctx.client.baseUrl, `Captured site ${site_id}.`)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}`,
+        `${captureSummary(screenshot, ctx.client.baseUrl, `Captured site ${site_id}.`)}\n${note}${sourceNote ? `\n${sourceNote}` : ''}${cityNote ? `\n${cityNote}` : ''}`,
         {
-          ...describeCapture(screenshot, ctx.client.baseUrl),
+          ...toPublicCapture(screenshot, ctx.client.baseUrl),
+          ...(geo ? { geo } : {}),
           idempotency_key: outcome.idempotencyKey,
           capture_source: outcome.source,
         },
@@ -267,7 +276,10 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       title: 'List captures of a site',
       description:
         'Capture history for one site, newest first, with the change percentage of each capture against the one ' +
-        'before it. Use it to answer "when did this page change?" and to get capture ids for diffing.',
+        'before it. Use it to answer "when did this page change?" and to get capture ids for diffing. ' +
+        'Every capture has a stage: "single" for an ordinary capture; a consent_flow site stores one capture per ' +
+        'stage of each run ("pre_consent", "post_accept", "post_reject"), and each is diffed against the previous ' +
+        'capture of the same stage, never against a different stage.',
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many captures (default 10).'),
@@ -276,7 +288,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
     },
     guard(async ({ site_id, limit }) => {
       const screenshots = await ctx.client.listScreenshots(site_id, limit ?? 10);
-      const captures = screenshots.map((shot) => describeCapture(shot, ctx.client.baseUrl));
+      const captures = screenshots.map((shot) => toPublicCapture(shot, ctx.client.baseUrl));
       return toolResult(
         captures.length === 0
           ? `Site ${site_id} has no captures yet. Run captureze_capture_site to make one.`
@@ -317,7 +329,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       }
 
       const wantDiff = variant === 'diff';
-      const described = describeCapture(screenshot, ctx.client.baseUrl);
+      const described = toPublicCapture(screenshot, ctx.client.baseUrl);
       const target = wantDiff ? described.diff_image_url : described.image_url;
       if (typeof target !== 'string') {
         return toolResult(
@@ -350,7 +362,8 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       title: 'List capture runs of a site',
       description:
         'Execution log for a site: when each scheduled or manual capture ran, whether it succeeded, how long it took ' +
-        'and the error if it failed. Use this to debug "why is this site not updating?".',
+        'and the error if it failed, plus every capture the run stored with its stage (a consent_flow run stores ' +
+        'one per stage). Use this to debug "why is this site not updating?".',
       inputSchema: {
         site_id: z.string().uuid().describe('Site id from captureze_list_sites.'),
         limit: z.number().int().min(1).max(100).optional().describe('How many runs (default 20).'),
@@ -358,15 +371,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
       annotations: { title: 'List capture runs of a site', readOnlyHint: true, openWorldHint: true },
     },
     guard(async ({ site_id, limit }) => {
-      const executions = await ctx.client.listExecutions(site_id, limit ?? 20);
-      const runs = executions.map((run) => ({
-        id: run.id,
-        status: run.status,
-        started_at: run.started_at ?? null,
-        duration_ms: run.duration_ms ?? null,
-        error: run.error_message ?? null,
-        capture_id: run.screenshot_id ?? null,
-      }));
+      const runs = (await ctx.client.listExecutions(site_id, limit ?? 20)).map(toPublicRun);
       return toolResult(
         runs.length === 0 ? `No capture runs recorded for site ${site_id}.` : jsonBlock(runs),
         { runs, count: runs.length },

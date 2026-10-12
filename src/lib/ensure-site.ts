@@ -23,6 +23,8 @@ export interface EnsureSiteResult {
    * paused, or on a schedule other than the one asked for.
    */
   changed: string[];
+  /** An existing paused site was switched back on. */
+  resumed: boolean;
 }
 
 export interface EnsureSiteOptions {
@@ -81,7 +83,7 @@ export async function ensureSiteForUrl({
     capture_now: captureOnCreate,
   } as ScheduleInput);
 
-  return { schedule, created: true, changed: [] };
+  return { schedule, created: true, changed: [], resumed: false };
 }
 
 /**
@@ -109,7 +111,7 @@ async function reuseSite(
     applySettingsToExisting: boolean;
   },
 ): Promise<EnsureSiteResult> {
-  if (!monitor) return { schedule: site, created: false, changed: [] };
+  if (!monitor) return { schedule: site, created: false, changed: [], resumed: false };
 
   const update: Partial<ScheduleInput> = {};
   const changed: string[] = [];
@@ -131,7 +133,8 @@ async function reuseSite(
     if (differing.length > 0) changed.push(`updated ${differing.join(', ')}`);
   }
 
-  if (changed.length === 0) return { schedule: site, created: false, changed };
+  const resumed = update.is_active === true;
+  if (changed.length === 0) return { schedule: site, created: false, changed, resumed };
   const schedule = await client.updateSchedule(site.id, update);
-  return { schedule, created: false, changed };
+  return { schedule, created: false, changed, resumed };
 }
