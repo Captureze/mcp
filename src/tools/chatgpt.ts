@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './context.ts';
 import { guard, resolveCaptureUrl } from '../lib/format.ts';
-import { loadPublicSite, toPublicCapture } from '../lib/public.ts';
+import { loadPublicSite, toPublicCapture, toPublicSite } from '../lib/public.ts';
 import type { Schedule } from '../lib/types.ts';
 
 /**
@@ -32,16 +32,13 @@ function siteConsoleUrl(baseUrl: string, siteId: string): string {
   return `${baseUrl}/app/sites/${siteId}`;
 }
 
-function siteSummary(site: Schedule): string {
+function siteSummary(schedule: Schedule): string {
+  const site = toPublicSite(schedule);
   const parts = [
     `Monitored page ${site.url}.`,
-    site.is_active ? `Captured on schedule "${site.cron_expression}".` : 'Scheduled capture paused.',
-    site.latest_screenshot?.created_at
-      ? `Last capture ${site.latest_screenshot.created_at}.`
-      : 'No captures yet.',
-    site.latest_screenshot?.diff_percent === null || site.latest_screenshot?.diff_percent === undefined
-      ? ''
-      : `Last change ${Number(site.latest_screenshot.diff_percent).toFixed(2)}%.`,
+    site.monitoring_active ? `Captured on schedule "${site.cron_expression}".` : 'Scheduled capture paused.',
+    site.last_capture_at ? `Last capture ${site.last_capture_at}.` : 'No captures yet.',
+    site.last_diff_percent === null ? '' : `Last change ${site.last_diff_percent.toFixed(2)}%.`,
   ];
   return parts.filter(Boolean).join(' ');
 }
@@ -81,11 +78,12 @@ export function registerChatGptTools(server: McpServer, ctx: ToolContext): void 
         for (const site of sites) {
           const captures = await ctx.client.listScreenshots(site.id, 5);
           for (const capture of captures) {
+            const { captured_at: capturedAt } = toPublicCapture(capture, ctx.client.baseUrl);
             results.push({
               id: `${CAPTURE_PREFIX}${site.id}:${capture.id}`,
-              title: `${site.name} — capture ${capture.created_at ?? capture.id}`,
+              title: `${site.name} — capture ${capturedAt ?? capture.id}`,
               text:
-                `Capture of ${site.url} taken ${capture.created_at ?? 'at an unknown time'}. ` +
+                `Capture of ${site.url} taken ${capturedAt ?? 'at an unknown time'}. ` +
                 (capture.diff_percent === null || capture.diff_percent === undefined
                   ? 'No diff against a previous capture.'
                   : `${Number(capture.diff_percent).toFixed(2)}% changed vs the previous capture.`),
