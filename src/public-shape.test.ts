@@ -418,6 +418,41 @@ describe('monitor_site initial capture', () => {
   });
 });
 
+describe('search', () => {
+  it('names a capture by the instant it was photographed, not when it was stored', async () => {
+    const api = fakeApi();
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (/\/api\/schedules\/[^/]+\/screenshots/.test(url)) {
+        return new Response(
+          JSON.stringify([
+            { ...FRAMES[1], created_at: '2026-10-12T12:23:58.689Z', captured_at: '2026-10-12T12:23:52.592Z' },
+          ]),
+          { headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/api/schedules') && (init?.method ?? 'GET') === 'GET') {
+        const site = {
+          ...SECRET_SITE,
+          latest_screenshot: {
+            ...SECRET_SITE.latest_screenshot,
+            created_at: '2026-10-12T12:23:58.689Z',
+            captured_at: '2026-10-12T12:23:52.592Z',
+          },
+        };
+        return new Response(JSON.stringify([site]), { headers: { 'content-type': 'application/json' } });
+      }
+      return api.fetchImpl(url, init);
+    };
+    const client = await connect(fetchImpl);
+    const { structuredContent } = await call(client, 'search', { query: 'members' });
+    const results = (structuredContent as Structured).results as Structured[];
+    const text = JSON.stringify(results);
+    assert.match(text, /Last capture 2026-10-12T12:23:52\.592Z/);
+    assert.match(text, /taken 2026-10-12T12:23:52\.592Z/);
+    assert.doesNotMatch(text, /12:23:58/);
+  });
+});
+
 describe('consent-flow stages', () => {
   it('every capture carries its stage', async () => {
     const client = await connect(fakeApi().fetchImpl);
