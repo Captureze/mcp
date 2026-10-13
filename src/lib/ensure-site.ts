@@ -10,9 +10,11 @@ import { sameTarget, siteLabel } from './url.ts';
  * paused (is_active false) so it never fires on its own.
  *
  * Daily is the coarsest preset and passes the interval check on every plan,
- * which is what a paused ad-hoc site wants.
+ * which is what a paused ad-hoc site wants. 09:00 is the time every example in
+ * the tool descriptions uses, so a site resumed later without a schedule of its
+ * own runs when the user would expect, not at an unexplained 03:00.
  */
-export const ADHOC_CRON = '0 3 * * *';
+export const ADHOC_CRON = '0 9 * * *';
 
 export interface EnsureSiteResult {
   schedule: Schedule;

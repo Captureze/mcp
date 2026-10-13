@@ -542,3 +542,70 @@ describe('city targeting in capture responses', () => {
     assert.equal(out.captured_at, '2026-10-09T07:00:42Z', 'the photograph, not the storage time');
   });
 });
+
+describe('consent detection results', () => {
+  const DETECTION = {
+    found: true,
+    cmp_id: 'tcf-unknown',
+    detection_method: 'heuristic',
+    confidence: 'medium',
+    accept: { text: 'Accepter et continuer', selector: '.gdpr-lmd-button::-p-text("Accepter et continuer")' },
+    reject: null,
+    candidates: [
+      {
+        role: 'accept',
+        text: 'Accepter et continuer',
+        selector: '.gdpr-lmd-button::-p-text("Accepter et continuer")',
+        matchCount: 1,
+      },
+      { role: 'reject', text: 'Refuser', selector: 'cmp-host >>> .refuse', matchCount: 1 },
+      { role: 'unknown', text: 'Paramètres', selector: '#settings', matchCount: 1 },
+    ],
+    warnings: ['heuristic_match', 'tcf_present_vendor_unknown'],
+    diagnostics: { internal_note: SECRETS.internal },
+  };
+
+  it('pairs every Puppeteer selector with its plain CSS form', async () => {
+    const api = fakeApi();
+    const fetchImpl: FetchLike = async (url, init) =>
+      url.includes('/api/consent/detect/')
+        ? new Response(JSON.stringify({ job_id: 'job-1', status: 'succeeded', result: DETECTION }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        : api.fetchImpl(url, init);
+    const client = await connect(fetchImpl);
+    const result = await call(client, 'captureze_get_consent_detection', { job_id: 'job-1' });
+    assertNoLeak('get_consent_detection', result);
+
+    const detection = (result.structuredContent as Structured).detection as Structured;
+    const out = detection.result as Structured;
+    assert.deepEqual(out.accept, {
+      text: 'Accepter et continuer',
+      selector: '.gdpr-lmd-button::-p-text("Accepter et continuer")',
+      css_selector: '.gdpr-lmd-button',
+    });
+    assert.equal(out.reject, null);
+    assert.deepEqual(
+      (out.candidates as Structured[]).map((candidate) => candidate.css_selector),
+      ['.gdpr-lmd-button', null, '#settings'],
+    );
+  });
+});
+
+describe('diff_trend', () => {
+  it('rounds the average instead of returning float noise', async () => {
+    const api = fakeApi();
+    const trend = [4.225212, 3.966628, 4.3926461].map((diff_percent, index) => ({
+      id: `c-${index}`,
+      captured_at: `2026-10-12T0${index}:00:00Z`,
+      diff_percent,
+    }));
+    const fetchImpl: FetchLike = async (url, init) =>
+      url.includes('/diff-trend')
+        ? new Response(JSON.stringify({ trend }), { headers: { 'content-type': 'application/json' } })
+        : api.fetchImpl(url, init);
+    const client = await connect(fetchImpl);
+    const result = await call(client, 'captureze_diff_trend', { site_id: SECRET_SITE.id });
+    assert.equal((result.structuredContent as Structured).average_diff_percent, 4.1948);
+  });
+});

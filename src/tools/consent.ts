@@ -4,6 +4,17 @@ import type { ToolContext } from './context.ts';
 import { guard, jsonBlock, toolResult } from '../lib/format.ts';
 import { toPublicConsentResult } from '../lib/public.ts';
 
+// How to read a result; both tools return the same shape.
+const CONSENT_RESULT_GUIDE =
+  'selector is a Puppeteer selector, which Captureze and Puppeteer run as is: ::-p-text("…") also matches the ' +
+  "button's text and >>> reaches into a shadow root. For any other tool use css_selector (plain CSS, null for a " +
+  'shadow root) and pick the element whose text is text. confidence: high = a known CMP whose accept and reject ' +
+  'buttons both resolved; medium = found by wording and its Accept was clicked and dismissed the banner; low = an ' +
+  'unverified guess, check banner_screenshot_url before relying on it. cmp_id names the vendor, "tcf-unknown" when ' +
+  'the page runs a TCF consent API from a vendor not identified, null when no CMP showed itself. reject is null when ' +
+  'the banner has no one-click refusal (a "pay or accept" wall, a refusal behind settings): a consent_flow site ' +
+  'built from it captures pre_consent and post_accept only.';
+
 export function registerConsentTools(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'captureze_detect_consent_banner',
@@ -13,7 +24,8 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
         'Finds the cookie consent banner on a page and returns the selectors for its accept/reject buttons, the CMP ' +
         'it uses and a confidence score. Feed the selectors into a consent_flow site to capture a page before and ' +
         'after consent. Results are cached per domain, so a cached answer comes back immediately; otherwise this ' +
-        'returns a job_id to poll with captureze_get_consent_detection. Limited to 20 new domains per day.',
+        'returns a job_id to poll with captureze_get_consent_detection. Limited to 20 new domains per day. ' +
+        CONSENT_RESULT_GUIDE,
       inputSchema: {
         url: z.string().url().describe('Page to probe.'),
         geo_country: z
@@ -53,7 +65,8 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext): void 
       title: 'Get a consent detection result',
       description:
         'Result of a banner detection job started by captureze_detect_consent_banner. Poll at most once every few ' +
-        'seconds; while status is "pending" or "running" there is nothing new to read.',
+        'seconds; while status is "pending" or "running" there is nothing new to read. ' +
+        CONSENT_RESULT_GUIDE,
       inputSchema: {
         job_id: z.string().describe('Job id returned by captureze_detect_consent_banner.'),
       },

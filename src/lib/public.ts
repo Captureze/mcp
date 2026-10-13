@@ -278,6 +278,25 @@ const CONSENT_RESULT_FIELDS = [
   'viewport',
 ] as const;
 
+/**
+ * The plain CSS part of a detection selector, for tools other than Captureze.
+ * Detection selectors are Puppeteer selectors: `base::-p-text("label")` also
+ * matches on the button's text, `host >>> inner` reaches into a shadow root.
+ * The text match drops to `base` (which may match several elements; the
+ * result's `text` names the one); a shadow-root selector has no CSS form.
+ */
+export function plainCssSelector(selector: unknown): string | null {
+  if (typeof selector !== 'string' || selector.includes('>>>')) return null;
+  const textMatch = /^(.*)::-p-text\((?:"[^"]*"|'[^']*'|[^)]*)\)$/s.exec(selector);
+  const css = textMatch ? textMatch[1]!.trim() : selector;
+  return css && !css.includes('::-p-') ? css : null;
+}
+
+function withCssSelector(control: unknown): unknown {
+  if (!control || typeof control !== 'object' || !('selector' in control)) return control;
+  return { ...control, css_selector: plainCssSelector((control as { selector: unknown }).selector) };
+}
+
 /** A banner detection result: what was found and where to click. */
 export function toPublicConsentResult(
   result: Record<string, unknown> | null | undefined,
@@ -287,6 +306,9 @@ export function toPublicConsentResult(
   for (const field of CONSENT_RESULT_FIELDS) {
     if (field in result) out[field] = result[field];
   }
+  if ('accept' in out) out.accept = withCssSelector(out.accept);
+  if ('reject' in out) out.reject = withCssSelector(out.reject);
+  if (Array.isArray(out.candidates)) out.candidates = out.candidates.map(withCssSelector);
   return out;
 }
 

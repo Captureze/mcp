@@ -64,9 +64,12 @@ export function registerDiffTools(server: McpServer, ctx: ToolContext): void {
         diff_percent:
           point.diff_percent === null || point.diff_percent === undefined ? null : Number(point.diff_percent),
       }));
+      // Four decimals: an average needs no more, and float noise reads as a bug.
       const average =
         points.length > 0
-          ? points.reduce((sum, point) => sum + (point.diff_percent ?? 0), 0) / points.length
+          ? Number(
+              (points.reduce((sum, point) => sum + (point.diff_percent ?? 0), 0) / points.length).toFixed(4),
+            )
           : null;
       return toolResult(
         points.length === 0
