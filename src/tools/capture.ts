@@ -148,7 +148,7 @@ export function registerCaptureTools(server: McpServer, ctx: ToolContext): void 
           .min(5)
           .max(100)
           .optional()
-          .describe('Schedule to use when monitor is true, e.g. "0 9 * * *". Defaults to daily.'),
+          .describe('Schedule to use when monitor is true, e.g. "0 9 * * *". Defaults to daily at 09:00.'),
         include_image: z
           .boolean()
           .optional()
